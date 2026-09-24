@@ -497,26 +497,26 @@ function update(dt) {
       const center = new THREE.Vector3(cx, cy, cz);
       const radius = maxDist + 0.3; // extra padding
       if (b.position.distanceTo(center) < radius) {
+        e.userData.health--;
+        spawnParticles(b.position, 0xff3333, 5);
+        scene.remove(b);
+        bullets.splice(i, 1);
 
-      e.userData.health--;
-      spawnParticles(b.position, 0xff3333, 5);
-      scene.remove(b);
-      bullets.splice(i, 1);
+        if (e.userData.health <= 0) {
+          spawnParticles(e.position, 0xff6600, 20);
+          scene.remove(e);
+          enemies.splice(j, 1);
+          score += 10 * wave;
+          enemiesRemaining--;
+          document.getElementById('score').textContent = `Score: ${score}`;
 
-      if (e.userData.health <= 0) {
-        spawnParticles(e.position, 0xff6600, 20);
-        scene.remove(e);
-        enemies.splice(j, 1);
-        score += 10 * wave;
-        enemiesRemaining--;
-        document.getElementById('score').textContent = `Score: ${score}`;
-
-        if (enemiesRemaining <= 0 && waveActive) {
-          waveActive = false;
-          setTimeout(() => { wave++; spawnWave(); }, 2000);
+          if (enemiesRemaining <= 0 && waveActive) {
+            waveActive = false;
+            setTimeout(() => { wave++; spawnWave(); }, 2000);
+          }
         }
+        break;
       }
-      break;
     }
   }
 
