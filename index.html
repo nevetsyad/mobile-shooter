@@ -479,23 +479,12 @@ function update(dt) {
       continue;
     }
 
-    // Bullet-enemy collision — use bounding sphere
+    // Bullet-enemy collision
     for (let j = enemies.length - 1; j >= 0; j--) {
       const e = enemies[j];
-      // Compute bounding sphere for enemy
-      let cx = 0, cy = 0, cz = 0;
-      let maxDist = 0;
-      for (const child of e.children) {
-        cx += child.position.x;
-        cy += child.position.y;
-        cz += child.position.z;
-        const d = child.position.length();
-        if (d > maxDist) maxDist = d;
-      }
-      const numChildren = e.children.length || 1;
-      cx /= numChildren; cy /= numChildren; cz /= numChildren;
-      const center = new THREE.Vector3(cx, cy, cz);
-      const radius = maxDist + 0.3; // extra padding
+      // Use enemy group world position + fixed radius (enemy is ~1.5 tall, radius 1.0 covers body+head)
+      const center = new THREE.Vector3(e.position.x, 0.9, e.position.z);
+      const radius = 1.0;
       if (b.position.distanceTo(center) < radius) {
         e.userData.health--;
         spawnParticles(b.position, 0xff3333, 5);
