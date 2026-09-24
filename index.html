@@ -16,31 +16,31 @@
   #crosshair::before, #crosshair::after { content: ''; position: absolute; background: rgba(255,255,255,0.7); }
   #crosshair::before { width: 2px; height: 24px; left: 11px; top: 0; }
   #crosshair::after { width: 24px; height: 2px; top: 11px; left: 0; }
-  #joystick-zone { position: fixed; bottom: 0; width: 50%; height: 180px; z-index: 20; }
-  #left-zone { left: 0; }
-  #right-zone { right: 0; }
-  .joystick-base { position: absolute; width: 100px; height: 100px; border-radius: 50%; background: rgba(255,255,255,0.12); border: 2px solid rgba(255,255,255,0.25); pointer-events: none; display: none; }
+  .joystick-base { position: absolute; width: 100px; height: 100px; border-radius: 50%; background: rgba(255,255,255,0.12); border: 2px solid rgba(255,255,255,0.25); pointer-events: none; display: none; z-index: 20; }
   .joystick-thumb { position: absolute; width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,0.4); border: 2px solid rgba(255,255,255,0.6); top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; }
-  #fire-btn { position: fixed; bottom: 30px; right: 30px; width: 80px; height: 80px; border-radius: 50%; background: rgba(255,50,50,0.35); border: 3px solid rgba(255,80,80,0.7); z-index: 30; display: flex; align-items: center; justify-content: center; color: #fff; font: bold 14px monospace; pointer-events: auto; }
+  #fire-btn { position: fixed; bottom: 30px; right: 30px; width: 80px; height: 80px; border-radius: 50%; background: rgba(255,50,50,0.35); border: 3px solid rgba(255,80,80,0.7); z-index: 30; display: flex; align-items: center; justify-content: center; color: #fff; font: bold 14px monospace; pointer-events: auto; -webkit-tap-highlight-color: transparent; }
   #fire-btn:active { background: rgba(255,50,50,0.6); }
   #fire-btn .icon { font-size: 28px; }
   #start-screen { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; }
   #start-screen h1 { color: #0f0; font: bold 32px monospace; text-shadow: 0 0 20px #0f0; margin-bottom: 12px; }
   #start-screen p { color: #aaa; font: 16px sans-serif; margin: 4px 0; }
-  #start-btn { margin-top: 30px; padding: 16px 48px; background: #0a0; color: #000; font: bold 20px sans-serif; border: none; border-radius: 8px; cursor: pointer; }
+  #start-btn { margin-top: 30px; padding: 16px 48px; background: #0a0; color: #000; font: bold 20px sans-serif; border: none; border-radius: 8px; cursor: pointer; pointer-events: auto; -webkit-tap-highlight-color: transparent; }
   #game-over { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 100; }
   #game-over h1 { color: #f00; font: bold 36px monospace; text-shadow: 0 0 20px #f00; margin-bottom: 12px; }
   #game-over p { color: #ccc; font: 20px monospace; margin: 4px 0; }
-  #restart-btn { margin-top: 30px; padding: 16px 48px; background: #a00; color: #fff; font: bold 20px sans-serif; border: none; border-radius: 8px; cursor: pointer; }
+  #restart-btn { margin-top: 30px; padding: 16px 48px; background: #a00; color: #fff; font: bold 20px sans-serif; border: none; border-radius: 8px; cursor: pointer; pointer-events: auto; -webkit-tap-highlight-color: transparent; }
   #wave-info { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #ff0; font: bold 36px monospace; text-shadow: 0 0 20px #ff0; z-index: 50; pointer-events: none; opacity: 0; transition: opacity 0.3s; }
+  #game-canvas { position: fixed; inset: 0; z-index: 1; }
 </style>
 </head>
 <body>
 
+<canvas id="game-canvas"></canvas>
+
 <div id="start-screen">
   <h1>3D SHOOTER</h1>
-  <p>Left joystick: move</p>
-  <p>Right joystick: look</p>
+  <p>Left side: move</p>
+  <p>Right side: look</p>
   <p>Red button: fire</p>
   <p>Survive waves of enemies!</p>
   <button id="start-btn">START</button>
@@ -59,9 +59,6 @@
 <div id="health-bar"><div id="health-fill" style="width:100%"></div></div>
 <div id="crosshair"></div>
 <div id="wave-info"></div>
-
-<div id="joystick-zone" id="left-zone"></div>
-<div id="joystick-zone" id="right-zone"></div>
 
 <div class="joystick-base" id="left-base"><div class="joystick-thumb" id="left-thumb"></div></div>
 <div class="joystick-base" id="right-base"><div class="joystick-thumb" id="right-thumb"></div></div>
@@ -90,18 +87,25 @@ let groundMesh;
 const ENEMY_SPEED = 3;
 const BULLET_SPEED = 40;
 const FIRE_RATE = 0.12;
-let lastTime = 0;
 
 // ─── Touch Joystick Logic ───
-const touchState = { left: null, right: null }; // { id, startX, startY, baseEl, thumbEl }
+const touchState = { left: null, right: null };
+const canvas = document.getElementById('game-canvas');
+
+function isOnCanvas(x, y) {
+  const rect = canvas.getBoundingClientRect();
+  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+}
 
 function handleTouchStart(e) {
-  e.preventDefault();
+  if (!gameRunning) return;
   const rect = document.body.getBoundingClientRect();
   for (let t of e.changedTouches) {
     const x = t.clientX - rect.left;
     const y = t.clientY - rect.top;
     const halfW = window.innerWidth / 2;
+    // Only track touches on the canvas area
+    if (!isOnCanvas(t.clientX, t.clientY)) continue;
     if (x < halfW && !touchState.left) {
       touchState.left = { id: t.identifier, startX: x, startY: y };
       showJoystick('left', x, y);
@@ -113,7 +117,7 @@ function handleTouchStart(e) {
 }
 
 function handleTouchMove(e) {
-  e.preventDefault();
+  if (!gameRunning) return;
   for (let t of e.changedTouches) {
     const halfW = window.innerWidth / 2;
     let state;
@@ -133,7 +137,6 @@ function handleTouchMove(e) {
     thumb.style.transform = `translate(calc(-50% + ${nx}px), calc(-50% + ${ny}px))`;
     base.style.display = 'block';
 
-    const norm = dist / 50;
     if (state.startX < halfW) {
       moveInput.x = nx / 50;
       moveInput.y = ny / 50;
@@ -145,7 +148,6 @@ function handleTouchMove(e) {
 }
 
 function handleTouchEnd(e) {
-  e.preventDefault();
   for (let t of e.changedTouches) {
     if (t.identifier === touchState.left?.id) {
       touchState.left = null;
@@ -171,10 +173,11 @@ function showJoystick(side, x, y) {
   thumb.style.transform = 'translate(-50%, -50%)';
 }
 
-document.addEventListener('touchstart', handleTouchStart, { passive: false });
-document.addEventListener('touchmove', handleTouchMove, { passive: false });
-document.addEventListener('touchend', handleTouchEnd, { passive: false });
-document.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+// Canvas-only touch listeners — don't intercept UI elements
+canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
 
 // ─── Keyboard fallback (for testing on desktop) ───
 const keys = {};
@@ -194,10 +197,26 @@ function updateInput() {
 // ─── Fire ───
 const fireBtn = document.getElementById('fire-btn');
 let firing = false;
-fireBtn.addEventListener('touchstart', e => { e.preventDefault(); firing = true; });
-fireBtn.addEventListener('touchend', e => { firing = false; });
-fireBtn.addEventListener('mousedown', () => firing = true);
-fireBtn.addEventListener('mouseup', () => firing = false);
+// Use both touchstart and mousedown but guard against double-fire
+let lastFireTime = 0;
+function startFiring(e) {
+  if (e) e.preventDefault();
+  const now = performance.now();
+  if (now - lastFireTime > 100) { // debounce 100ms
+    firing = true;
+    lastFireTime = now;
+  }
+}
+function stopFiring(e) {
+  if (e) e.preventDefault();
+  firing = false;
+}
+fireBtn.addEventListener('touchstart', startFiring, { passive: false });
+fireBtn.addEventListener('touchend', stopFiring, { passive: false });
+fireBtn.addEventListener('touchcancel', stopFiring, { passive: false });
+fireBtn.addEventListener('mousedown', startFiring);
+fireBtn.addEventListener('mouseup', stopFiring);
+fireBtn.addEventListener('mouseleave', stopFiring);
 document.addEventListener('keydown', e => { if (e.code === 'Space') firing = true; });
 document.addEventListener('keyup', e => { if (e.code === 'Space') firing = false; });
 
@@ -210,21 +229,20 @@ function init() {
   camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 200);
   camera.position.copy(playerPos);
 
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.shadowMap.enabled = true;
+  // Disable shadows on mobile for performance
+  renderer.shadowMap.enabled = false;
   document.body.appendChild(renderer.domElement);
 
   clock = new THREE.Clock();
 
   // Lights
-  const ambient = new THREE.AmbientLight(0x404060, 0.6);
+  const ambient = new THREE.AmbientLight(0x404060, 0.7);
   scene.add(ambient);
   const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
   dirLight.position.set(10, 20, 10);
-  dirLight.castShadow = true;
-  dirLight.shadow.mapSize.set(1024, 1024);
   scene.add(dirLight);
 
   // Ground
@@ -268,8 +286,6 @@ function createObstacles() {
     const angle = Math.random() * Math.PI * 2;
     const dist = 10 + Math.random() * 60;
     box.position.set(Math.cos(angle) * dist, h / 2, Math.sin(angle) * dist);
-    box.castShadow = true;
-    box.receiveShadow = true;
     scene.add(box);
   }
 }
@@ -283,7 +299,6 @@ function spawnEnemy() {
   const bodyMat = new THREE.MeshStandardMaterial({ color: 0xff3333, emissive: 0x440000 });
   const body = new THREE.Mesh(bodyGeo, bodyMat);
   body.position.y = 0.6;
-  body.castShadow = true;
   group.add(body);
 
   // Head
@@ -291,7 +306,6 @@ function spawnEnemy() {
   const headMat = new THREE.MeshStandardMaterial({ color: 0xff6666, emissive: 0x330000 });
   const head = new THREE.Mesh(headGeo, headMat);
   head.position.y = 1.5;
-  head.castShadow = true;
   group.add(head);
 
   // Eyes
@@ -335,17 +349,18 @@ function showWaveInfo(text) {
 }
 
 // ─── Bullets ───
+const bulletGeo = new THREE.SphereGeometry(0.06, 6, 6);
+const bulletMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+
 function fireBullet() {
-  const geo = new THREE.SphereGeometry(0.06, 6, 6);
-  const mat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
-  const bullet = new THREE.Mesh(geo, mat);
+  const bullet = new THREE.Mesh(bulletGeo, bulletMat);
   bullet.position.copy(camera.position);
 
   const dir = new THREE.Vector3();
   camera.getWorldDirection(dir);
   bullet.position.add(dir.clone().multiplyScalar(0.5));
 
-  bullet.userData = { velocity: dir.multiplyScalar(BULLET_SPEED), life: 3 };
+  bullet.userData = { velocity: dir.clone().multiplyScalar(BULLET_SPEED), life: 3 };
   scene.add(bullet);
   bullets.push(bullet);
 
@@ -357,11 +372,12 @@ function fireBullet() {
 }
 
 // ─── Particles ───
+const particleGeo = new THREE.BoxGeometry(0.08, 0.08, 0.08);
+
 function spawnParticles(pos, color, count) {
+  const mat = new THREE.MeshBasicMaterial({ color });
   for (let i = 0; i < count; i++) {
-    const geo = new THREE.BoxGeometry(0.08, 0.08, 0.08);
-    const mat = new THREE.MeshBasicMaterial({ color });
-    const p = new THREE.Mesh(geo, mat);
+    const p = new THREE.Mesh(particleGeo, mat);
     p.position.copy(pos);
     p.userData = {
       velocity: new THREE.Vector3(
@@ -428,31 +444,37 @@ function update(dt) {
       continue;
     }
 
-    // Bullet-enemy collision
+    // Bullet-enemy collision — check all children (body + head + eyes)
     for (let j = enemies.length - 1; j >= 0; j--) {
       const e = enemies[j];
-      const head = e.children[1]; // head mesh
-      if (b.position.distanceTo(head.position) < 0.8) {
-        e.userData.health--;
-        spawnParticles(b.position, 0xff3333, 5);
-        scene.remove(b);
-        bullets.splice(i, 1);
-
-        if (e.userData.health <= 0) {
-          spawnParticles(e.position, 0xff6600, 20);
-          scene.remove(e);
-          enemies.splice(j, 1);
-          score += 10 * wave;
-          enemiesRemaining--;
-          document.getElementById('score').textContent = `Score: ${score}`;
-
-          if (enemiesRemaining <= 0 && waveActive) {
-            waveActive = false;
-            setTimeout(() => { wave++; spawnWave(); }, 2000);
-          }
+      let hit = false;
+      for (const child of e.children) {
+        if (b.position.distanceTo(child.position) < 0.8) {
+          hit = true;
+          break;
         }
-        break;
       }
+      if (!hit) continue;
+
+      e.userData.health--;
+      spawnParticles(b.position, 0xff3333, 5);
+      scene.remove(b);
+      bullets.splice(i, 1);
+
+      if (e.userData.health <= 0) {
+        spawnParticles(e.position, 0xff6600, 20);
+        scene.remove(e);
+        enemies.splice(j, 1);
+        score += 10 * wave;
+        enemiesRemaining--;
+        document.getElementById('score').textContent = `Score: ${score}`;
+
+        if (enemiesRemaining <= 0 && waveActive) {
+          waveActive = false;
+          setTimeout(() => { wave++; spawnWave(); }, 2000);
+        }
+      }
+      break;
     }
   }
 
