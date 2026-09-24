@@ -300,9 +300,11 @@ enemyTexture.magFilter = THREE.NearestFilter;
 function spawnEnemy() {
   const group = new THREE.Group();
 
-  const spriteMat = new THREE.SpriteMaterial({ map: enemyTexture });
+  const spriteMat = new THREE.SpriteMaterial({ map: enemyTexture, transparent: true });
   const sprite = new THREE.Sprite(spriteMat);
-  sprite.scale.set(1.2, 1.8, 1);
+  // Sprite is centered on origin; lift so feet sit on the ground
+  sprite.scale.set(0.7, 1.8, 1);
+  sprite.position.y = 0.9;
   group.add(sprite);
 
   const angle = Math.random() * Math.PI * 2;
