@@ -16,8 +16,8 @@
   #crosshair::before, #crosshair::after { content: ''; position: absolute; background: rgba(255,255,255,0.7); }
   #crosshair::before { width: 2px; height: 24px; left: 11px; top: 0; }
   #crosshair::after { width: 24px; height: 2px; top: 11px; left: 0; }
-  .joystick-base { position: absolute; width: 100px; height: 100px; border-radius: 50%; background: rgba(255,255,255,0.12); border: 2px solid rgba(255,255,255,0.25); pointer-events: none; display: none; z-index: 20; }
-  .joystick-thumb { position: absolute; width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,0.4); border: 2px solid rgba(255,255,255,0.6); top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+  .joystick-base { position: absolute; width: 120px; height: 120px; border-radius: 50%; background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.35); pointer-events: none; display: none; z-index: 50; }
+  .joystick-thumb { position: absolute; width: 50px; height: 50px; border-radius: 50%; background: rgba(255,255,255,0.35); border: 2px solid rgba(255,255,255,0.7); top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; }
   #fire-btn { position: fixed; bottom: 30px; right: 30px; width: 80px; height: 80px; border-radius: 50%; background: rgba(255,50,50,0.35); border: 3px solid rgba(255,80,80,0.7); z-index: 30; display: flex; align-items: center; justify-content: center; color: #fff; font: bold 14px monospace; pointer-events: auto; -webkit-tap-highlight-color: transparent; }
   #fire-btn:active { background: rgba(255,50,50,0.6); }
   #fire-btn .icon { font-size: 28px; }
