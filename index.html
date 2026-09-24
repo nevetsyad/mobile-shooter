@@ -96,6 +96,8 @@ let touchCanvas = null; // reference to the actual canvas element
 
 function handleTouchStart(e) {
   if (!gameRunning) return;
+  // Skip touches on UI elements (buttons, etc.)
+  if (e.target.closest('#start-btn, #restart-btn, #fire-btn')) return;
   e.preventDefault();
   const rect = document.body.getBoundingClientRect();
   for (let t of e.changedTouches) {
