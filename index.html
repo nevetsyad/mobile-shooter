@@ -567,9 +567,9 @@ function update(dt) {
 }
 
 function animate() {
-  requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
   update(dt);
+  requestAnimationFrame(animate);
 }
 
 // ─── Game Flow ───
