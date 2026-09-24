@@ -613,22 +613,37 @@ function startGame() {
   window.__pendingWaveTimeouts = [];
 
   gameRunning = true;
+  attachTouchListeners();
   spawnWave();
 }
 
 function gameOver() {
   gameRunning = false;
+  detachTouchListeners();
   document.getElementById('final-score').textContent = score;
   document.getElementById('final-wave').textContent = wave;
   document.getElementById('game-over').style.display = 'flex';
 }
 
 // ─── Event Listeners ───
-// Touch listeners on the actual canvas element
-document.addEventListener('touchstart', handleTouchStart, { passive: false });
-document.addEventListener('touchmove', handleTouchMove, { passive: false });
-document.addEventListener('touchend', handleTouchEnd, { passive: false });
-document.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+// Touch listeners are attached in startGame() so they don't block UI buttons
+let touchListenersAttached = false;
+function attachTouchListeners() {
+  if (touchListenersAttached) return;
+  touchListenersAttached = true;
+  document.addEventListener('touchstart', handleTouchStart, { passive: false });
+  document.addEventListener('touchmove', handleTouchMove, { passive: false });
+  document.addEventListener('touchend', handleTouchEnd, { passive: false });
+  document.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+}
+function detachTouchListeners() {
+  if (!touchListenersAttached) return;
+  touchListenersAttached = false;
+  document.removeEventListener('touchstart', handleTouchStart);
+  document.removeEventListener('touchmove', handleTouchMove);
+  document.removeEventListener('touchend', handleTouchEnd);
+  document.removeEventListener('touchcancel', handleTouchEnd);
+}
 
 // Keyboard
 const keys = {};
