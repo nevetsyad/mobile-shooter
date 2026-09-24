@@ -421,7 +421,7 @@ function update(dt) {
   else if (!touchState.left) moveInput.x = 0;
 
   // Camera look (right joystick)
-  const lookSens = 2.0;
+  const lookSens = 1.2;
   playerYaw -= lookInput.x * lookSens * dt;
   playerPitch -= lookInput.y * lookSens * dt;
   playerPitch = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, playerPitch));
@@ -477,17 +477,24 @@ function update(dt) {
       continue;
     }
 
-    // Bullet-enemy collision
+    // Bullet-enemy collision — use bounding sphere
     for (let j = enemies.length - 1; j >= 0; j--) {
       const e = enemies[j];
-      let hit = false;
+      // Compute bounding sphere for enemy
+      let cx = 0, cy = 0, cz = 0;
+      let maxDist = 0;
       for (const child of e.children) {
-        if (b.position.distanceTo(child.position) < 1.0) {
-          hit = true;
-          break;
-        }
+        cx += child.position.x;
+        cy += child.position.y;
+        cz += child.position.z;
+        const d = child.position.length();
+        if (d > maxDist) maxDist = d;
       }
-      if (!hit) continue;
+      const numChildren = e.children.length || 1;
+      cx /= numChildren; cy /= numChildren; cz /= numChildren;
+      const center = new THREE.Vector3(cx, cy, cz);
+      const radius = maxDist + 0.3; // extra padding
+      if (b.position.distanceTo(center) < radius) {
 
       e.userData.health--;
       spawnParticles(b.position, 0xff3333, 5);
