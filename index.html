@@ -269,6 +269,23 @@
             letter-spacing: 1px;
             text-transform: uppercase;
         }
+        #mute-btn {
+            position: fixed;
+            top: 12px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 40;
+            pointer-events: auto;
+            background: rgba(0,0,0,0.55);
+            color: #fff;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.6px;
+            cursor: pointer;
+        }
 
         /* Wave announcement */
         #wave-announce {
@@ -328,6 +345,7 @@
 </head>
 <body>
     <div id="game-container"></div>
+    <button id="mute-btn" type="button">MUSIC ON</button>
 
     <!-- HUD -->
     <div id="hud">
@@ -383,8 +401,9 @@
         <h1>Sara Goes to Work</h1>
         <p>
             WASD to move • Mouse to look • Click to fire<br>
-            R to reload • Survive the waves<br>
-            Phone: stick to move, drag the right side to look
+            R to reload • M for music • Survive the waves<br>
+            Phone: stick to move, drag the right side to look<br>
+            Cyan shooters hang back • Green bombers explode
         </p>
         <p id="menu-best"></p>
         <button id="start-btn">PLAY</button>

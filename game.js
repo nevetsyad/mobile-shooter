@@ -1,6 +1,6 @@
 // ============================================================
-// SARA GOES TO WORK - Phase 2: Combat
-// Weapons, enemies, waves, ammo, reload, collisions, sound
+// SARA GOES TO WORK - Phase 3: Soundtrack and enemy variety
+// Procedural music, shooter and bomber enemies, saved best wave
 // ============================================================
 
 (function() {
@@ -46,8 +46,20 @@
     let particles = [];
     let muzzleFlashes = [];
     let highScore = 0;
+    let bestWave = 0;
     let newBestThisRun = false;
     let reloadToken = 0;
+    let enemyShots = [];
+    let musicGain = null;
+    let musicFilter = null;
+    let hatBuffer = null;
+    const MUSIC = {
+        playing: false,
+        muted: false,
+        step: 0,
+        nextTime: 0,
+        timer: 0
+    };
 
     const GEO = {};
     const MAT = {};
@@ -99,7 +111,8 @@
         waveAnnounce: document.getElementById('wave-announce'),
         damageFlash: document.getElementById('damage-flash'),
         reloadIndicator: document.getElementById('reload-indicator'),
-        finalScore: document.getElementById('final-score')
+        finalScore: document.getElementById('final-score'),
+        muteBtn: document.getElementById('mute-btn')
     };
 
     let audioCtx;
@@ -107,9 +120,21 @@
     function loadHighScore() {
         try {
             highScore = parseInt(localStorage.getItem('sgtw_highscore') || '0', 10) || 0;
+            bestWave = parseInt(localStorage.getItem('sgtw_bestwave') || '0', 10) || 0;
+            MUSIC.muted = localStorage.getItem('sgtw_music') === 'off';
         } catch (err) {
             highScore = 0;
+            bestWave = 0;
         }
+    }
+
+    function rememberWave() {
+        if (PLAYER.wave <= bestWave) return false;
+        bestWave = PLAYER.wave;
+        try {
+            localStorage.setItem('sgtw_bestwave', String(bestWave));
+        } catch (err) {}
+        return true;
     }
 
     function rememberScore() {
@@ -135,6 +160,8 @@
         });
         MAT.bullet.userData.shared = true;
         MAT.trail.userData.shared = true;
+        MAT.enemyShot = new THREE.MeshBasicMaterial({ color: 0x66eeff });
+        MAT.enemyShot.userData.shared = true;
     }
 
     function initAudio() {
@@ -220,10 +247,139 @@
                 osc.start(now);
                 osc.stop(now + 0.42);
                 break;
+            case 'enemyShot':
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(260, now);
+                osc.frequency.exponentialRampToValueAtTime(90, now + 0.1);
+                gain.gain.setValueAtTime(0.07, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+                osc.start(now);
+                osc.stop(now + 0.12);
+                break;
+            case 'boom':
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(96, now);
+                osc.frequency.exponentialRampToValueAtTime(32, now + 0.28);
+                gain.gain.setValueAtTime(0.32, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.32);
+                osc.start(now);
+                osc.stop(now + 0.32);
+                break;
             default:
                 osc.stop(now);
                 break;
         }
+    }
+
+    function ensureHatBuffer() {
+        if (hatBuffer || !audioCtx) return;
+        const length = Math.floor(audioCtx.sampleRate * 0.05);
+        hatBuffer = audioCtx.createBuffer(1, length, audioCtx.sampleRate);
+        const data = hatBuffer.getChannelData(0);
+        for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+    }
+
+    function ensureMusicBus() {
+        if (!audioCtx || musicGain) return;
+        musicGain = audioCtx.createGain();
+        musicGain.gain.value = MUSIC.muted ? 0.0001 : 1;
+        musicFilter = audioCtx.createBiquadFilter();
+        musicFilter.type = 'lowpass';
+        musicFilter.frequency.value = 900;
+        musicGain.connect(musicFilter);
+        musicFilter.connect(audioCtx.destination);
+    }
+
+    function applyMusicVolume() {
+        if (!musicGain || !audioCtx) return;
+        musicGain.gain.setTargetAtTime(MUSIC.muted ? 0.0001 : 1, audioCtx.currentTime, 0.04);
+    }
+
+    function updateMuteLabel() {
+        if (dom.muteBtn) dom.muteBtn.textContent = MUSIC.muted ? 'MUSIC OFF' : 'MUSIC ON';
+    }
+
+    function toggleMusic() {
+        MUSIC.muted = !MUSIC.muted;
+        try {
+            localStorage.setItem('sgtw_music', MUSIC.muted ? 'off' : 'on');
+        } catch (err) {}
+        applyMusicVolume();
+        updateMuteLabel();
+    }
+
+    function musicTone(time, freq, type, dur, vol) {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, time);
+        gain.gain.setValueAtTime(vol, time);
+        gain.gain.exponentialRampToValueAtTime(0.0001, time + dur);
+        osc.connect(gain);
+        gain.connect(musicGain);
+        osc.start(time);
+        osc.stop(time + dur + 0.02);
+    }
+
+    function musicHat(time) {
+        if (!hatBuffer) return;
+        const src = audioCtx.createBufferSource();
+        const filter = audioCtx.createBiquadFilter();
+        const gain = audioCtx.createGain();
+        src.buffer = hatBuffer;
+        filter.type = 'highpass';
+        filter.frequency.value = 5000;
+        gain.gain.setValueAtTime(0.025, time);
+        gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.04);
+        src.connect(filter);
+        filter.connect(gain);
+        gain.connect(musicGain);
+        src.start(time);
+        src.stop(time + 0.05);
+    }
+
+    function triggerMusicStep(time, step) {
+        const bass = [55, 0, 82.41, 55, 73.42, 0, 65.41, 49][step];
+        if (bass) musicTone(time, bass, 'triangle', 0.18, 0.05);
+        if (step % 2 === 0) musicHat(time);
+        if (step % 4 === 0) musicTone(time, 62, 'sine', 0.09, 0.07);
+        if (PLAYER.wave >= 2) {
+            const lead = [0, 220, 0, 277.18, 329.63, 0, 246.94, 196][step];
+            if (lead) musicTone(time, lead, 'square', 0.11, 0.012);
+        }
+        if (PLAYER.wave >= 4 && step === 6) musicTone(time, 392, 'sawtooth', 0.08, 0.01);
+    }
+
+    function scheduleMusic() {
+        if (!MUSIC.playing || !audioCtx) return;
+        if (MUSIC.nextTime < audioCtx.currentTime) MUSIC.nextTime = audioCtx.currentTime + 0.05;
+        const bpm = 96 + Math.min(32, Math.max(0, PLAYER.wave - 1) * 4);
+        const stepDur = 60 / bpm / 2;
+        const horizon = audioCtx.currentTime + 0.24;
+        while (MUSIC.nextTime < horizon) {
+            triggerMusicStep(MUSIC.nextTime, MUSIC.step % 8);
+            MUSIC.step += 1;
+            MUSIC.nextTime += stepDur;
+        }
+        if (musicFilter) {
+            const open = 780 + Math.min(2400, PLAYER.wave * 160);
+            musicFilter.frequency.setTargetAtTime(open, audioCtx.currentTime, 0.25);
+        }
+        MUSIC.timer = setTimeout(scheduleMusic, 70);
+    }
+
+    function startMusic() {
+        initAudio();
+        if (!audioCtx) return;
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        ensureHatBuffer();
+        ensureMusicBus();
+        applyMusicVolume();
+        if (MUSIC.playing) return;
+        MUSIC.playing = true;
+        MUSIC.step = 0;
+        MUSIC.nextTime = audioCtx.currentTime + 0.06;
+        scheduleMusic();
     }
 
     function init() {
@@ -261,6 +417,7 @@
         cacheWallBoxes();
         setupEventListeners();
         updateScoreLabels();
+        updateMuteLabel();
         animate();
     }
 
@@ -418,6 +575,14 @@
                 health = 90; speed = 1.6; damage = 22; scoreValue = 300;
                 size = [1.2, 2.2, 1.2]; color = 0x8844ff;
                 break;
+            case 'shooter':
+                health = 28; speed = 2.5; damage = 12; scoreValue = 180;
+                size = [0.7, 1.7, 0.7]; color = 0x33ddff;
+                break;
+            case 'bomber':
+                health = 24; speed = 5.4; damage = 28; scoreValue = 220;
+                size = [1.05, 1.15, 1.05]; color = 0x44ee66;
+                break;
             default:
                 health = 34; speed = 3.1; damage = 10; scoreValue = 100;
                 size = [0.8, 1.6, 0.8]; color = 0xff4444;
@@ -450,14 +615,37 @@
             enemy.add(pupil);
         });
 
+        if (type === 'shooter') {
+            const barrel = new THREE.Mesh(
+                new THREE.BoxGeometry(0.12, 0.12, 0.7),
+                new THREE.MeshStandardMaterial({ color: 0x88eeff, metalness: 0.7, roughness: 0.25 })
+            );
+            barrel.position.set(0, size[1] * 0.62, size[2] / 2 + 0.28);
+            enemy.add(barrel);
+        }
+        if (type === 'bomber') {
+            const fuse = new THREE.Mesh(
+                new THREE.SphereGeometry(0.2, 8, 8),
+                new THREE.MeshStandardMaterial({
+                    color: 0xffaa22, emissive: 0xff5500, emissiveIntensity: 0.7
+                })
+            );
+            fuse.position.y = size[1] + 0.12;
+            enemy.add(fuse);
+        }
+
         const angle = Math.random() * Math.PI * 2;
         const dist = 28 + Math.random() * 6;
         enemy.position.set(Math.cos(angle) * dist, 0, Math.sin(angle) * dist);
 
         enemy.userData = {
             type, health, maxHealth: health, speed, damage, scoreValue, size,
-            attackCooldown: 400, attackRate: Math.max(650, 1100 - waveBonus * 40),
-            hitFlash: 0
+            attackCooldown: type === 'shooter' ? 700 : 400,
+            attackRate: type === 'shooter'
+                ? Math.max(850, 1450 - waveBonus * 60)
+                : Math.max(650, 1100 - waveBonus * 40),
+            hitFlash: 0,
+            strafe: Math.random() < 0.5 ? 1 : -1
         };
 
         scene.add(enemy);
@@ -467,10 +655,11 @@
     }
 
     function spawnEnemy() {
-        const types = ['grunt', 'grunt', 'grunt', 'fast'];
-        if (PLAYER.wave >= 2) types.push('fast', 'tank');
-        if (PLAYER.wave >= 4) types.push('tank', 'fast');
-        if (PLAYER.wave >= 6) types.push('tank');
+        const types = ['grunt', 'grunt', 'fast'];
+        if (PLAYER.wave >= 2) types.push('shooter', 'grunt');
+        if (PLAYER.wave >= 3) types.push('bomber', 'fast', 'shooter');
+        if (PLAYER.wave >= 4) types.push('tank', 'shooter');
+        if (PLAYER.wave >= 6) types.push('bomber', 'tank');
         createEnemy(types[Math.floor(Math.random() * types.length)]);
         waveConfig.enemiesSpawned++;
     }
@@ -487,19 +676,45 @@
             const dist = Math.hypot(dx, dz) || 0.001;
 
             enemy.lookAt(px, enemy.position.y, pz);
+            const step = data.speed * delta;
 
-            if (dist > 1.6) {
-                const step = data.speed * delta;
+            if (data.type === 'shooter') {
+                if (dist > 13) {
+                    enemy.position.x += (dx / dist) * step;
+                    enemy.position.z += (dz / dist) * step;
+                } else if (dist < 7) {
+                    enemy.position.x -= (dx / dist) * step;
+                    enemy.position.z -= (dz / dist) * step;
+                } else {
+                    enemy.position.x += (-dz / dist) * step * data.strafe;
+                    enemy.position.z += (dx / dist) * step * data.strafe;
+                }
+                data.attackCooldown -= delta * 1000;
+                if (data.attackCooldown <= 0 && dist < 22) {
+                    fireEnemyShot(enemy);
+                    data.attackCooldown = data.attackRate;
+                }
+            } else if (data.type === 'bomber') {
                 enemy.position.x += (dx / dist) * step;
                 enemy.position.z += (dz / dist) * step;
-            }
-
-            if (dist < 1.8) {
-                data.attackCooldown -= delta * 1000;
-                if (data.attackCooldown <= 0) {
-                    damagePlayer(data.damage);
-                    data.attackCooldown = data.attackRate;
-                    playSound('hit');
+                const pulse = 1 + Math.sin(performance.now() / 110) * 0.1;
+                enemy.children[0].scale.setScalar(pulse);
+                if (dist < 1.55) {
+                    killEnemy(i);
+                    continue;
+                }
+            } else {
+                if (dist > 1.6) {
+                    enemy.position.x += (dx / dist) * step;
+                    enemy.position.z += (dz / dist) * step;
+                }
+                if (dist < 1.8) {
+                    data.attackCooldown -= delta * 1000;
+                    if (data.attackCooldown <= 0) {
+                        damagePlayer(data.damage);
+                        data.attackCooldown = data.attackRate;
+                        playSound('hit');
+                    }
                 }
             }
 
@@ -727,14 +942,100 @@
         });
     }
 
+    function fireEnemyShot(enemy) {
+        const data = enemy.userData;
+        const shot = new THREE.Mesh(GEO.bullet, MAT.enemyShot);
+        shot.position.set(enemy.position.x, data.size[1] * 0.62, enemy.position.z);
+        const dx = camera.position.x - shot.position.x;
+        const dy = 1.3 - shot.position.y;
+        const dz = camera.position.z - shot.position.z;
+        const len = Math.hypot(dx, dy, dz) || 1;
+        shot.userData = {
+            direction: new THREE.Vector3(dx / len, dy / len, dz / len),
+            speed: 16,
+            life: 2.4,
+            damage: data.damage
+        };
+        scene.add(shot);
+        enemyShots.push(shot);
+        playSound('enemyShot');
+        if (enemyShots.length > 40) {
+            const old = enemyShots.shift();
+            scene.remove(old);
+        }
+    }
+
+    function updateEnemyShots(delta) {
+        for (let i = enemyShots.length - 1; i >= 0; i--) {
+            const shot = enemyShots[i];
+            const data = shot.userData;
+            const prevX = shot.position.x;
+            const prevY = shot.position.y;
+            const prevZ = shot.position.z;
+            const step = data.speed * delta;
+            shot.position.x += data.direction.x * step;
+            shot.position.y += data.direction.y * step;
+            shot.position.z += data.direction.z * step;
+            data.life -= delta;
+
+            let hit = segmentHitsSphere(
+                prevX, prevY, prevZ,
+                shot.position.x, shot.position.y, shot.position.z,
+                camera.position.x, 1.3, camera.position.z,
+                0.65
+            );
+            if (hit) {
+                damagePlayer(data.damage);
+                createParticles(shot.position, 0x66eeff, 4);
+            } else {
+                ray.origin.set(prevX, prevY, prevZ);
+                ray.direction.copy(data.direction);
+                const travel = Math.hypot(
+                    shot.position.x - prevX,
+                    shot.position.y - prevY,
+                    shot.position.z - prevZ
+                );
+                for (let k = 0; k < wallBoxes.length; k++) {
+                    if (wallBoxes[k].containsPoint(shot.position) ||
+                        (ray.intersectBox(wallBoxes[k], rayHit) &&
+                         rayHit.distanceTo(ray.origin) <= travel + 0.08)) {
+                        hit = true;
+                        break;
+                    }
+                }
+            }
+
+            if (hit || data.life <= 0 || Math.abs(shot.position.x) > 48 || Math.abs(shot.position.z) > 48) {
+                scene.remove(shot);
+                enemyShots.splice(i, 1);
+            }
+        }
+    }
+
+    function bomberBlast(position, damage) {
+        createParticles(position.clone().setY(0.8), 0x44ee66, 10);
+        createParticles(position.clone().setY(0.8), 0xff7722, 8);
+        playSound('boom');
+        const dist = Math.hypot(camera.position.x - position.x, camera.position.z - position.z);
+        if (dist < 3.2) {
+            damagePlayer(Math.max(6, Math.round(damage * (1 - dist / 3.4))));
+        }
+    }
+
     function killEnemy(index) {
         const enemy = enemies[index];
         if (!enemy) return;
         const data = enemy.userData;
-        createParticles(enemy.position.clone().setY(data.size[1] * 0.5), data.type === 'tank' ? 0x8844ff : 0xff4444, 12);
+        const color = data.type === 'tank' ? 0x8844ff
+            : data.type === 'shooter' ? 0x33ddff
+            : data.type === 'bomber' ? 0x44ee66
+            : data.type === 'fast' ? 0xffaa00
+            : 0xff4444;
+        if (data.type === 'bomber') bomberBlast(enemy.position, data.damage);
+        createParticles(enemy.position.clone().setY(data.size[1] * 0.5), color, 12);
         PLAYER.score += data.scoreValue;
         rememberScore();
-        playSound('kill');
+        if (data.type !== 'bomber') playSound('kill');
         scene.remove(enemy);
         disposeObject(enemy);
         enemies.splice(index, 1);
@@ -755,6 +1056,7 @@
         waveConfig.enemiesPerWave = 4 + PLAYER.wave * 2;
         waveConfig.spawnInterval = Math.max(650, 1900 - PLAYER.wave * 90);
         PLAYER.health = Math.min(PLAYER.maxHealth, PLAYER.health + 12);
+        rememberWave();
         announceWave(PLAYER.wave);
         playSound('wave');
         updateHUD();
@@ -814,6 +1116,7 @@
 
         dom.startBtn.addEventListener('click', startGame);
         dom.restartBtn.addEventListener('click', restartGame);
+        if (dom.muteBtn) dom.muteBtn.addEventListener('click', toggleMusic);
         setupTouchControls();
         window.addEventListener('resize', onWindowResize);
     }
@@ -821,6 +1124,7 @@
     function onKeyDown(event) {
         keys[event.code] = true;
         if (event.code === 'KeyR' && gameState === STATE.PLAYING) reload();
+        if (event.code === 'KeyM') toggleMusic();
     }
 
     function onKeyUp(event) {
@@ -939,9 +1243,11 @@
             scene.remove(particle);
             particle.material.dispose();
         });
+        enemyShots.forEach(shot => scene.remove(shot));
         enemies = [];
         bullets = [];
         particles = [];
+        enemyShots = [];
     }
 
     function startGame() {
@@ -977,6 +1283,7 @@
         camera.rotation.order = 'YXZ';
         createWeapon();
         if (controls.isLocked === false) controls.lock();
+        startMusic();
         updateHUD();
         announceWave(1);
     }
@@ -990,11 +1297,16 @@
         gameState = STATE.GAME_OVER;
         mouseDown = false;
         touchFirePressed = false;
+        const waveBeat = rememberWave();
         rememberScore();
         if (controls.isLocked) controls.unlock();
         dom.finalScore.textContent = `Score ${PLAYER.score}  ·  Wave ${PLAYER.wave}`;
         if (dom.finalBest) {
-            dom.finalBest.textContent = newBestThisRun ? `New best: ${highScore}` : `Best: ${highScore}`;
+            dom.finalBest.textContent = newBestThisRun
+                ? `New best: ${highScore}`
+                : waveBeat
+                    ? `Best wave: ${bestWave}`
+                    : `Best: ${highScore}`;
         }
         dom.gameOver.style.display = 'flex';
         updateScoreLabels();
@@ -1013,9 +1325,14 @@
     }
 
     function updateScoreLabels() {
-        const label = `Best ${highScore}`;
+        const label = bestWave ? `Best ${highScore} · W${bestWave}` : `Best ${highScore}`;
         if (dom.bestValue) dom.bestValue.textContent = label;
-        if (dom.menuBest) dom.menuBest.textContent = highScore ? `Best score: ${highScore}` : '';
+        if (dom.menuBest) {
+            const bits = [];
+            if (highScore) bits.push(`Best score: ${highScore}`);
+            if (bestWave) bits.push(`Best wave: ${bestWave}`);
+            dom.menuBest.textContent = bits.join(' · ');
+        }
     }
 
     function updateHUD() {
@@ -1124,6 +1441,7 @@
             updatePlayerMovement(delta);
             updateEnemies(delta);
             updateBullets(delta);
+            updateEnemyShots(delta);
             updateParticles(delta);
             updateWaveSystem(delta);
         }
