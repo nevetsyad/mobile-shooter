@@ -6,6 +6,54 @@
 (function() {
     'use strict';
 
+    if (typeof THREE === 'undefined') {
+        const screen = document.getElementById('start-screen');
+        if (screen) {
+            const note = document.createElement('p');
+            note.textContent = '3D engine failed to load. Refresh and try again.';
+            screen.appendChild(note);
+        }
+        return;
+    }
+
+    function createControls(camera, domElement) {
+        const controls = {
+            isLocked: false,
+            lock() {
+                const request = domElement.requestPointerLock;
+                if (!request) return;
+                try {
+                    const pending = request.call(domElement);
+                    if (pending && typeof pending.catch === 'function') pending.catch(() => {});
+                } catch (err) {}
+            },
+            unlock() {
+                try {
+                    if (document.exitPointerLock) document.exitPointerLock();
+                } catch (err) {}
+            }
+        };
+        document.addEventListener('pointerlockchange', () => {
+            controls.isLocked = document.pointerLockElement === domElement;
+        });
+        document.addEventListener('mousemove', (event) => {
+            if (document.pointerLockElement !== domElement) return;
+            camera.rotation.order = 'YXZ';
+            camera.rotation.y -= (event.movementX || 0) * 0.002;
+            camera.rotation.x -= (event.movementY || 0) * 0.002;
+            camera.rotation.x = Math.max(-1.45, Math.min(1.45, camera.rotation.x));
+        });
+        return controls;
+    }
+
+    function viewportSize() {
+        const view = window.visualViewport;
+        return {
+            width: Math.max(1, Math.round(view ? view.width : window.innerWidth)),
+            height: Math.max(1, Math.round(view ? view.height : window.innerHeight))
+        };
+    }
+
     const STATE = {
         MENU: 'menu',
         PLAYING: 'playing',
@@ -391,9 +439,10 @@
         scene.background = new THREE.Color(0x1a1a2e);
         scene.fog = new THREE.Fog(0x1a1a2e, 20, 80);
 
+        const view = viewportSize();
         camera = new THREE.PerspectiveCamera(
             75,
-            window.innerWidth / window.innerHeight,
+            view.width / view.height,
             0.1,
             200
         );
@@ -401,16 +450,16 @@
         camera.rotation.order = 'YXZ';
         scene.add(camera);
 
-        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.setSize(view.width, view.height, false);
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         renderer.toneMappingExposure = 1.2;
         dom.container.appendChild(renderer.domElement);
 
-        controls = new THREE.PointerLockControls(camera, document.body);
+        controls = createControls(camera, renderer.domElement);
 
         setupLighting();
         arena = createArena();
@@ -418,6 +467,7 @@
         setupEventListeners();
         updateScoreLabels();
         updateMuteLabel();
+        onWindowResize();
         animate();
     }
 
@@ -1119,6 +1169,9 @@
         if (dom.muteBtn) dom.muteBtn.addEventListener('click', toggleMusic);
         setupTouchControls();
         window.addEventListener('resize', onWindowResize);
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', onWindowResize);
+        }
     }
 
     function onKeyDown(event) {
@@ -1228,9 +1281,12 @@
     }
 
     function onWindowResize() {
-        camera.aspect = window.innerWidth / window.innerHeight;
+        const view = viewportSize();
+        camera.aspect = view.width / view.height;
         camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setSize(view.width, view.height, false);
+        renderer.domElement.style.width = '100%';
+        renderer.domElement.style.height = '100%';
     }
 
     function clearActors() {
@@ -1254,6 +1310,7 @@
         initAudio();
         dom.startScreen.style.display = 'none';
         dom.gameOver.style.display = 'none';
+        document.body.classList.add('playing');
         gameState = STATE.PLAYING;
 
         PLAYER.health = PLAYER.maxHealth;
@@ -1282,7 +1339,8 @@
         camera.rotation.set(0, 0, 0);
         camera.rotation.order = 'YXZ';
         createWeapon();
-        if (controls.isLocked === false) controls.lock();
+        onWindowResize();
+        try { controls.lock(); } catch (err) {}
         startMusic();
         updateHUD();
         announceWave(1);
@@ -1295,6 +1353,7 @@
     function gameOver() {
         if (gameState === STATE.GAME_OVER) return;
         gameState = STATE.GAME_OVER;
+        document.body.classList.remove('playing');
         mouseDown = false;
         touchFirePressed = false;
         const waveBeat = rememberWave();
@@ -1448,5 +1507,15 @@
         renderer.render(scene, camera);
     }
 
-    init();
+    try {
+        init();
+    } catch (err) {
+        console.error(err);
+        const screen = document.getElementById('start-screen');
+        if (screen) {
+            const note = document.createElement('p');
+            note.textContent = 'Game failed to start. Refresh and try again.';
+            screen.appendChild(note);
+        }
+    }
 })();
