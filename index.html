@@ -169,9 +169,28 @@
 
         /* Look zone (right half of screen) */
         #look-zone {
-            position: absolute;
+            position: fixed;
             top: 0; right: 0;
-            width: 50%; height: 100%;
+            width: 55%; height: 100%;
+            z-index: 1;
+            touch-action: none;
+        }
+        .touch-zone { z-index: 2; }
+        #crosshair.hit::before, #crosshair.hit::after {
+            background: #ff6644;
+        }
+        #best-value, #menu-best, #final-best {
+            color: rgba(255, 200, 80, 0.9);
+        }
+        #best-value {
+            font-size: 11px;
+            letter-spacing: 0.4px;
+            margin-top: 2px;
+        }
+        #menu-best, #final-best {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 28px;
         }
 
         /* Start screen */
@@ -323,6 +342,7 @@
             <div class="hud-item">
                 <div class="label">Score</div>
                 <div class="value" id="score-value">0</div>
+                <div id="best-value">Best 0</div>
             </div>
         </div>
         <div id="hud-right">
@@ -363,8 +383,10 @@
         <h1>Sara Goes to Work</h1>
         <p>
             WASD to move • Mouse to look • Click to fire<br>
-            R to reload • Survive the waves
+            R to reload • Survive the waves<br>
+            Phone: stick to move, drag the right side to look
         </p>
+        <p id="menu-best"></p>
         <button id="start-btn">PLAY</button>
     </div>
 
@@ -372,6 +394,7 @@
     <div id="game-over">
         <h2>GAME OVER</h2>
         <div id="final-score">Score: 0</div>
+        <div id="final-best">Best: 0</div>
         <button id="restart-btn">PLAY AGAIN</button>
     </div>
 
