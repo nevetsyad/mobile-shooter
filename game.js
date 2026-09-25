@@ -448,6 +448,9 @@
         );
         camera.position.set(0, 1.7, 0);
         camera.rotation.order = 'YXZ';
+        const gunLight = new THREE.PointLight(0xfff4e8, 3, 8);
+        gunLight.position.set(0.2, 0.05, -0.35);
+        camera.add(gunLight);
         scene.add(camera);
 
         renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
@@ -578,14 +581,14 @@
 
         const body = new THREE.Mesh(
             new THREE.BoxGeometry(0.08, 0.08, 0.4),
-            new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.3, metalness: 0.8 })
+            new THREE.MeshStandardMaterial({ color: 0xb7b7b7, roughness: 0.45, metalness: 0.35, emissive: 0x222222 })
         );
         body.position.set(0, 0, -0.2);
         weaponGroup.add(body);
 
         const barrel = new THREE.Mesh(
             new THREE.CylinderGeometry(0.02, 0.02, 0.25, 8),
-            new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.2, metalness: 0.9 })
+            new THREE.MeshStandardMaterial({ color: 0x9aa0a8, roughness: 0.35, metalness: 0.5, emissive: 0x111111 })
         );
         barrel.rotation.x = Math.PI / 2;
         barrel.position.set(0, 0.02, -0.5);
@@ -593,7 +596,7 @@
 
         const handle = new THREE.Mesh(
             new THREE.BoxGeometry(0.06, 0.12, 0.06),
-            new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.5, metalness: 0.5 })
+            new THREE.MeshStandardMaterial({ color: 0x6a4a32, roughness: 0.6, metalness: 0.15, emissive: 0x1a1008 })
         );
         handle.position.set(0, -0.08, -0.08);
         handle.rotation.x = 0.25;
