@@ -228,17 +228,27 @@
         GEO.bullet = new THREE.SphereGeometry(0.05, 6, 6);
         GEO.trail = new THREE.CylinderGeometry(0.02, 0.02, 0.3, 4);
         GEO.particle = new THREE.SphereGeometry(0.035, 4, 4);
+        GEO.doc = new THREE.BoxGeometry(0.42, 0.012, 0.3);
+        GEO.docLine = new THREE.BoxGeometry(0.28, 0.014, 0.018);
+        GEO.docStamp = new THREE.BoxGeometry(0.16, 0.016, 0.05);
         GEO.bullet.userData.shared = true;
         GEO.trail.userData.shared = true;
         GEO.particle.userData.shared = true;
+        GEO.doc.userData.shared = true;
+        GEO.docLine.userData.shared = true;
+        GEO.docStamp.userData.shared = true;
         MAT.bullet = new THREE.MeshBasicMaterial({ color: 0xffff00 });
         MAT.trail = new THREE.MeshBasicMaterial({
             color: 0xffaa00, transparent: true, opacity: 0.55
         });
         MAT.bullet.userData.shared = true;
         MAT.trail.userData.shared = true;
-        MAT.enemyShot = new THREE.MeshBasicMaterial({ color: 0x66eeff });
-        MAT.enemyShot.userData.shared = true;
+        MAT.doc = new THREE.MeshStandardMaterial({ color: 0xf7f1e4, roughness: 0.85 });
+        MAT.docLine = new THREE.MeshBasicMaterial({ color: 0x2a2a2a });
+        MAT.docStamp = new THREE.MeshBasicMaterial({ color: 0x1a4f8b });
+        MAT.doc.userData.shared = true;
+        MAT.docLine.userData.shared = true;
+        MAT.docStamp.userData.shared = true;
     }
 
     function initAudio() {
@@ -324,15 +334,31 @@
                 osc.start(now);
                 osc.stop(now + 0.42);
                 break;
-            case 'enemyShot':
-                osc.type = 'square';
-                osc.frequency.setValueAtTime(260, now);
-                osc.frequency.exponentialRampToValueAtTime(90, now + 0.1);
-                gain.gain.setValueAtTime(0.07, now);
-                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+            case 'enemyShot': {
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(740, now);
+                osc.frequency.exponentialRampToValueAtTime(220, now + 0.14);
+                gain.gain.setValueAtTime(0.05, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.16);
                 osc.start(now);
-                osc.stop(now + 0.12);
+                osc.stop(now + 0.16);
+                const rustle = audioCtx.createBuffer(1, Math.floor(audioCtx.sampleRate * 0.14), audioCtx.sampleRate);
+                const samples = rustle.getChannelData(0);
+                for (let i = 0; i < samples.length; i++) {
+                    samples[i] = (Math.random() * 2 - 1) * (1 - i / samples.length);
+                }
+                const noise = audioCtx.createBufferSource();
+                const filter = audioCtx.createBiquadFilter();
+                noise.buffer = rustle;
+                filter.type = 'bandpass';
+                filter.frequency.setValueAtTime(2200, now);
+                filter.frequency.exponentialRampToValueAtTime(700, now + 0.14);
+                noise.connect(filter);
+                filter.connect(gain);
+                noise.start(now);
+                noise.stop(now + 0.14);
                 break;
+            }
             case 'boom':
                 osc.type = 'sawtooth';
                 osc.frequency.setValueAtTime(96, now);
@@ -1227,18 +1253,40 @@
         });
     }
 
+    function makeDiscovery() {
+        const doc = new THREE.Group();
+        const page = new THREE.Mesh(GEO.doc, MAT.doc);
+        doc.add(page);
+        [-0.06, 0, 0.06].forEach(z => {
+            const line = new THREE.Mesh(GEO.docLine, MAT.docLine);
+            line.position.set(0, 0.01, z);
+            doc.add(line);
+        });
+        const stamp = new THREE.Mesh(GEO.docStamp, MAT.docStamp);
+        stamp.position.set(-0.08, 0.012, -0.1);
+        doc.add(stamp);
+        doc.rotation.x = -0.4;
+        return doc;
+    }
+
     function fireEnemyShot(enemy) {
         const data = enemy.userData;
-        const shot = new THREE.Mesh(GEO.bullet, MAT.enemyShot);
-        shot.position.set(enemy.position.x, data.size[1] * 0.62, enemy.position.z);
+        const shot = makeDiscovery();
+        shot.position.set(enemy.position.x, data.size[1] * 0.72, enemy.position.z);
         const dx = camera.position.x - shot.position.x;
-        const dy = 1.3 - shot.position.y;
+        const dy = (1.45 - shot.position.y) + 1.1;
         const dz = camera.position.z - shot.position.z;
         const len = Math.hypot(dx, dy, dz) || 1;
+        const velocity = new THREE.Vector3(dx / len, dy / len, dz / len).multiplyScalar(10.5);
+        shot.position.addScaledVector(velocity, 0.05);
         shot.userData = {
-            direction: new THREE.Vector3(dx / len, dy / len, dz / len),
-            speed: 16,
-            life: 2.4,
+            velocity,
+            spin: new THREE.Vector3(
+                (Math.random() - 0.5) * 7,
+                (Math.random() - 0.5) * 5,
+                (Math.random() - 0.5) * 9
+            ),
+            life: 3.1,
             damage: data.damage
         };
         scene.add(shot);
@@ -1257,10 +1305,16 @@
             const prevX = shot.position.x;
             const prevY = shot.position.y;
             const prevZ = shot.position.z;
-            const step = data.speed * delta;
-            shot.position.x += data.direction.x * step;
-            shot.position.y += data.direction.y * step;
-            shot.position.z += data.direction.z * step;
+            data.velocity.y -= 7.5 * delta;
+            const stepX = data.velocity.x * delta;
+            const stepY = data.velocity.y * delta;
+            const stepZ = data.velocity.z * delta;
+            shot.position.x += stepX;
+            shot.position.y += stepY;
+            shot.position.z += stepZ;
+            shot.rotation.x += data.spin.x * delta;
+            shot.rotation.y += data.spin.y * delta;
+            shot.rotation.z += data.spin.z * delta;
             data.life -= delta;
 
             let hit = segmentHitsSphere(
@@ -1271,20 +1325,21 @@
             );
             if (hit) {
                 damagePlayer(data.damage);
-                createParticles(shot.position, 0x66eeff, 4);
+                createParticles(shot.position, 0xf4efe4, 5);
+            } else if (shot.position.y < 0.04) {
+                hit = true;
+                createParticles(shot.position, 0xf4efe4, 3);
             } else {
                 ray.origin.set(prevX, prevY, prevZ);
-                ray.direction.copy(data.direction);
-                const travel = Math.hypot(
-                    shot.position.x - prevX,
-                    shot.position.y - prevY,
-                    shot.position.z - prevZ
-                );
-                for (let k = 0; k < wallBoxes.length; k++) {
+                ray.direction.set(stepX, stepY, stepZ);
+                const travel = ray.direction.length();
+                if (travel > 0.0001) ray.direction.multiplyScalar(1 / travel);
+                for (let k = 0; k < wallBoxes.length && travel > 0.0001; k++) {
                     if (wallBoxes[k].containsPoint(shot.position) ||
                         (ray.intersectBox(wallBoxes[k], rayHit) &&
                          rayHit.distanceTo(ray.origin) <= travel + 0.08)) {
                         hit = true;
+                        createParticles(shot.position, 0xf4efe4, 3);
                         break;
                     }
                 }
