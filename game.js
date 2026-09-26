@@ -1,6 +1,6 @@
 // ============================================================
 // SARA GOES TO WORK - Phase 4: cover, flanking, sprint, pause
-// Procedural music, shooter and bomber enemies, saved best wave
+// Automatic staple gun, procedural music, shooter and bomber enemies
 // ============================================================
 
 (function() {
@@ -39,8 +39,8 @@
         document.addEventListener('mousemove', (event) => {
             if (document.pointerLockElement !== domElement) return;
             camera.rotation.order = 'YXZ';
-            camera.rotation.y -= (event.movementX || 0) * 0.002;
-            camera.rotation.x -= (event.movementY || 0) * 0.002;
+            camera.rotation.y -= (event.movementX || 0) * 0.0024;
+            camera.rotation.x -= (event.movementY || 0) * 0.0024;
             camera.rotation.x = Math.max(-1.45, Math.min(1.45, camera.rotation.x));
         });
         return controls;
@@ -102,11 +102,11 @@
     const WEAPON = {
         maxAmmo: 30,
         ammo: 30,
-        fireRate: 100,
+        fireRate: 80,
         lastShot: 0,
         reloading: false,
         reloadTime: 1500,
-        recoil: 0.035,
+        recoil: 0.018,
         recoilRecovery: 0.82,
         currentRecoil: 0,
         bobTime: 0,
@@ -226,22 +226,30 @@
 
     function initPools() {
         GEO.bullet = new THREE.SphereGeometry(0.05, 6, 6);
+        GEO.stapleCrown = new THREE.BoxGeometry(0.09, 0.014, 0.014);
+        GEO.stapleLeg = new THREE.BoxGeometry(0.014, 0.014, 0.08);
         GEO.trail = new THREE.CylinderGeometry(0.02, 0.02, 0.3, 4);
         GEO.particle = new THREE.SphereGeometry(0.035, 4, 4);
         GEO.doc = new THREE.BoxGeometry(0.42, 0.012, 0.3);
         GEO.docLine = new THREE.BoxGeometry(0.28, 0.014, 0.018);
         GEO.docStamp = new THREE.BoxGeometry(0.16, 0.016, 0.05);
         GEO.bullet.userData.shared = true;
+        GEO.stapleCrown.userData.shared = true;
+        GEO.stapleLeg.userData.shared = true;
         GEO.trail.userData.shared = true;
         GEO.particle.userData.shared = true;
         GEO.doc.userData.shared = true;
         GEO.docLine.userData.shared = true;
         GEO.docStamp.userData.shared = true;
         MAT.bullet = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+        MAT.staple = new THREE.MeshStandardMaterial({
+            color: 0xd5d8de, roughness: 0.25, metalness: 0.85, emissive: 0x222222
+        });
         MAT.trail = new THREE.MeshBasicMaterial({
             color: 0xffaa00, transparent: true, opacity: 0.55
         });
         MAT.bullet.userData.shared = true;
+        MAT.staple.userData.shared = true;
         MAT.trail.userData.shared = true;
         MAT.doc = new THREE.MeshStandardMaterial({ color: 0xf7f1e4, roughness: 0.85 });
         MAT.docLine = new THREE.MeshBasicMaterial({ color: 0x2a2a2a });
@@ -270,13 +278,13 @@
 
         switch (type) {
             case 'shoot':
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(180, now);
-                osc.frequency.exponentialRampToValueAtTime(55, now + 0.08);
-                gain.gain.setValueAtTime(0.22, now);
-                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(1400, now);
+                osc.frequency.exponentialRampToValueAtTime(180, now + 0.035);
+                gain.gain.setValueAtTime(0.1, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.045);
                 osc.start(now);
-                osc.stop(now + 0.1);
+                osc.stop(now + 0.045);
                 break;
             case 'hit':
                 osc.type = 'square';
@@ -693,38 +701,70 @@
         muzzleFlashes.length = 0;
     }
 
+    const stapleForward = new THREE.Vector3(0, 0, -1);
+
+    function makeStaple() {
+        const staple = new THREE.Group();
+        const crown = new THREE.Mesh(GEO.stapleCrown, MAT.staple);
+        crown.position.set(0, 0, 0.03);
+        const left = new THREE.Mesh(GEO.stapleLeg, MAT.staple);
+        left.position.set(-0.036, 0, -0.01);
+        const right = new THREE.Mesh(GEO.stapleLeg, MAT.staple);
+        right.position.set(0.036, 0, -0.01);
+        staple.add(crown, left, right);
+        return staple;
+    }
+
     function createWeapon() {
         destroyWeapon();
         weaponGroup = new THREE.Group();
 
-        const body = new THREE.Mesh(
-            new THREE.BoxGeometry(0.08, 0.08, 0.4),
-            new THREE.MeshStandardMaterial({ color: 0xb7b7b7, roughness: 0.45, metalness: 0.35, emissive: 0x222222 })
-        );
-        body.position.set(0, 0, -0.2);
+        const plastic = new THREE.MeshStandardMaterial({
+            color: 0x1a1a1a, roughness: 0.5, metalness: 0.3, emissive: 0x111111
+        });
+        const metal = new THREE.MeshStandardMaterial({
+            color: 0xc8ccd2, roughness: 0.28, metalness: 0.75, emissive: 0x222222
+        });
+        const magMat = new THREE.MeshStandardMaterial({
+            color: 0xc45a12, roughness: 0.45, metalness: 0.2, emissive: 0x2a1004
+        });
+
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.07, 0.32), plastic);
+        body.position.set(0, 0.02, -0.14);
         weaponGroup.add(body);
 
-        const barrel = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.02, 0.02, 0.25, 8),
-            new THREE.MeshStandardMaterial({ color: 0x9aa0a8, roughness: 0.35, metalness: 0.5, emissive: 0x111111 })
-        );
-        barrel.rotation.x = Math.PI / 2;
-        barrel.position.set(0, 0.02, -0.5);
-        weaponGroup.add(barrel);
+        const nose = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.042, 0.1), metal);
+        nose.position.set(0, 0.008, -0.34);
+        weaponGroup.add(nose);
 
-        const handle = new THREE.Mesh(
-            new THREE.BoxGeometry(0.06, 0.12, 0.06),
-            new THREE.MeshStandardMaterial({ color: 0x6a4a32, roughness: 0.6, metalness: 0.15, emissive: 0x1a1008 })
-        );
-        handle.position.set(0, -0.08, -0.08);
-        handle.rotation.x = 0.25;
+        const channel = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.01, 0.16), metal);
+        channel.position.set(0, -0.016, -0.26);
+        weaponGroup.add(channel);
+
+        const magazine = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 0.22), magMat);
+        magazine.position.set(0, -0.028, -0.1);
+        magazine.rotation.x = 0.16;
+        weaponGroup.add(magazine);
+
+        const handle = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.14, 0.055), plastic);
+        handle.position.set(0, -0.08, 0);
+        handle.rotation.x = 0.32;
         weaponGroup.add(handle);
 
+        const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.038, 0.012), metal);
+        trigger.position.set(0, -0.028, -0.07);
+        weaponGroup.add(trigger);
+
+        const loaded = makeStaple();
+        loaded.position.set(0, -0.004, -0.4);
+        loaded.scale.setScalar(0.7);
+        weaponGroup.add(loaded);
+
         const flash = new THREE.Mesh(
-            new THREE.SphereGeometry(0.05, 8, 8),
-            new THREE.MeshBasicMaterial({ color: 0xffaa00, transparent: true, opacity: 0 })
+            new THREE.SphereGeometry(0.035, 8, 8),
+            new THREE.MeshBasicMaterial({ color: 0xffe080, transparent: true, opacity: 0 })
         );
-        flash.position.set(0, 0.02, -0.64);
+        flash.position.set(0, 0, -0.42);
         flash.name = 'muzzleFlash';
         weaponGroup.add(flash);
         muzzleFlashes.push(flash);
@@ -1084,7 +1124,7 @@
 
         playSound('shoot');
 
-        const bullet = new THREE.Mesh(GEO.bullet, MAT.bullet);
+        const bullet = makeStaple();
         const origin = new THREE.Vector3();
         if (flash) flash.getWorldPosition(origin);
         else camera.getWorldPosition(origin);
@@ -1092,22 +1132,18 @@
 
         const direction = new THREE.Vector3();
         camera.getWorldDirection(direction);
-        const spread = 0.006 + WEAPON.currentRecoil * 0.12;
+        const spread = 0.01 + WEAPON.currentRecoil * 0.12;
         direction.x += (Math.random() - 0.5) * spread;
         direction.y += (Math.random() - 0.5) * spread;
         direction.z += (Math.random() - 0.5) * spread * 0.25;
         direction.normalize();
-
-        const trail = new THREE.Mesh(GEO.trail, MAT.trail);
-        trail.rotation.x = Math.PI / 2;
-        trail.position.z = -0.15;
-        bullet.add(trail);
+        bullet.quaternion.setFromUnitVectors(stapleForward, direction);
 
         bullet.userData = {
             direction,
-            speed: 70,
+            speed: 58,
             life: 1.4,
-            damage: 18
+            damage: 15
         };
 
         scene.add(bullet);
@@ -1157,7 +1193,7 @@
                     if (enemy.userData.type !== 'bomber') {
                         enemy.userData.coverUntil = performance.now() + 1400;
                     }
-                    createParticles(bullet.position, 0xffee66, 4);
+                    createParticles(bullet.position, 0xd8dce2, 3);
                     flashCrosshair();
                     if (enemy.userData.health <= 0) killEnemy(j);
                     else playSound('hit');
@@ -1451,7 +1487,7 @@
         document.addEventListener('keydown', onKeyDown);
         document.addEventListener('keyup', onKeyUp);
         document.addEventListener('mousedown', onMouseDown);
-        document.addEventListener('mouseup', () => { mouseDown = false; });
+        document.addEventListener('mouseup', onMouseUp);
         document.addEventListener('contextmenu', event => event.preventDefault());
 
         dom.startBtn.addEventListener('click', startGame);
@@ -1490,10 +1526,20 @@
         keys[event.code] = false;
     }
 
-    function onMouseDown() {
+    function onMouseDown(event) {
+        if (event.button === 2) {
+            event.preventDefault();
+            if (gameState === STATE.PLAYING) reload();
+            return;
+        }
+        if (event.button !== 0) return;
         if (gameState !== STATE.PLAYING) return;
         if (!controls.isLocked) controls.lock();
         mouseDown = true;
+    }
+
+    function onMouseUp(event) {
+        if (!event.button) mouseDown = false;
     }
 
     function setupTouchControls() {

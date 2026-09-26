@@ -177,8 +177,11 @@
             background: rgba(255,50,50,0.5);
         }
         #fire-btn::after {
-            content: '🔫';
-            font-size: 28px;
+            content: 'STAPLE';
+            color: #fff;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 0.4px;
         }
 
         /* Look zone (right half of screen) */
@@ -485,7 +488,7 @@
                 <div class="value" id="wave-value">1</div>
             </div>
             <div class="hud-item">
-                <div class="label">Ammo</div>
+                <div class="label">Staples</div>
                 <div class="value" id="ammo-value">30</div>
                 <div id="ammo-bar-container">
                     <div id="ammo-bar"></div>
@@ -517,7 +520,7 @@
         <h1>Sara Goes to Work</h1>
         <p>
             WASD to move • Shift to sprint • Mouse to look<br>
-            Click to fire • R to reload • Esc to pause<br>
+            Hold to fire the staple gun • Right click or R to reload staples • Esc to pause<br>
             Phone: stick to move, RELOAD on the left, drag the right side<br>
             Lawyers with briefcases • Cyan ones throw discovery • Green cases explode
         </p>
@@ -546,11 +549,11 @@
     <div id="damage-flash"></div>
 
     <!-- Reload indicator -->
-    <div id="reload-indicator">RELOADING...</div>
+    <div id="reload-indicator">LOADING STAPLES...</div>
 
     </div>
     <!-- Three.js -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-    <script src="game.js?v=10"></script>
+    <script src="game.js?v=12"></script>
 </body>
 </html>
