@@ -639,6 +639,132 @@
         camera.add(weaponGroup);
     }
 
+    const LAWYER = { ready: false };
+
+    function ensureLawyerParts() {
+        if (LAWYER.ready) return;
+        const sharedGeo = geo => {
+            geo.userData.shared = true;
+            return geo;
+        };
+        const sharedMat = opts => {
+            const material = new THREE.MeshStandardMaterial(opts);
+            material.userData.shared = true;
+            return material;
+        };
+        LAWYER.geo = {
+            head: sharedGeo(new THREE.SphereGeometry(0.16, 10, 8)),
+            hair: sharedGeo(new THREE.BoxGeometry(0.28, 0.08, 0.26)),
+            torso: sharedGeo(new THREE.BoxGeometry(0.46, 0.62, 0.28)),
+            leg: sharedGeo(new THREE.BoxGeometry(0.14, 0.62, 0.16)),
+            arm: sharedGeo(new THREE.BoxGeometry(0.12, 0.5, 0.12)),
+            shoe: sharedGeo(new THREE.BoxGeometry(0.15, 0.08, 0.22)),
+            tie: sharedGeo(new THREE.BoxGeometry(0.07, 0.28, 0.04)),
+            collar: sharedGeo(new THREE.BoxGeometry(0.16, 0.08, 0.04)),
+            glasses: sharedGeo(new THREE.BoxGeometry(0.26, 0.035, 0.03)),
+            case: sharedGeo(new THREE.BoxGeometry(0.26, 0.18, 0.08)),
+            clasp: sharedGeo(new THREE.BoxGeometry(0.08, 0.04, 0.02)),
+            handle: sharedGeo(new THREE.BoxGeometry(0.12, 0.04, 0.03)),
+            paper: sharedGeo(new THREE.BoxGeometry(0.14, 0.1, 0.01))
+        };
+        LAWYER.skin = sharedMat({ color: 0xd7b08a, roughness: 0.7 });
+        LAWYER.hair = sharedMat({ color: 0x1a120c, roughness: 0.85 });
+        LAWYER.shirt = sharedMat({ color: 0xf4f1ea, roughness: 0.6 });
+        LAWYER.shoe = sharedMat({ color: 0x111111, roughness: 0.4, metalness: 0.2 });
+        LAWYER.glass = sharedMat({ color: 0x1a1a1a, roughness: 0.15, metalness: 0.65 });
+        LAWYER.leather = sharedMat({ color: 0x5a3a22, roughness: 0.45, metalness: 0.2 });
+        LAWYER.gold = sharedMat({ color: 0xc9a227, roughness: 0.35, metalness: 0.7 });
+        LAWYER.ready = true;
+    }
+
+    function lawyerPiece(geo, material, x, y, z) {
+        const piece = new THREE.Mesh(geo, material);
+        piece.position.set(x, y, z);
+        return piece;
+    }
+
+    function dressLawyer(enemy, type, size, accent) {
+        ensureLawyerParts();
+        const g = LAWYER.geo;
+        const suitColor = {
+            fast: 0x2c2418,
+            tank: 0x1c1430,
+            shooter: 0x142433,
+            bomber: 0x14301c
+        }[type] || 0x1c1c24;
+        const suitMat = new THREE.MeshStandardMaterial({
+            color: suitColor, roughness: 0.55, metalness: 0.12
+        });
+        const tieMat = new THREE.MeshStandardMaterial({
+            color: accent, roughness: 0.4, metalness: 0.15,
+            emissive: accent, emissiveIntensity: 0.12
+        });
+        const caseMat = type === 'bomber'
+            ? new THREE.MeshStandardMaterial({
+                color: 0x2a4a28, roughness: 0.4, metalness: 0.2,
+                emissive: 0x33cc55, emissiveIntensity: 0.55
+            })
+            : LAWYER.leather;
+
+        const figure = new THREE.Group();
+        figure.name = 'lawyer';
+        figure.add(lawyerPiece(g.leg, suitMat, -0.12, 0.4, 0));
+        figure.add(lawyerPiece(g.leg, suitMat, 0.12, 0.4, 0));
+        figure.add(lawyerPiece(g.shoe, LAWYER.shoe, -0.12, 0.06, 0.03));
+        figure.add(lawyerPiece(g.shoe, LAWYER.shoe, 0.12, 0.06, 0.03));
+
+        const jacket = lawyerPiece(g.torso, suitMat, 0, 0.98, 0);
+        jacket.name = 'suit';
+        jacket.castShadow = true;
+        figure.add(jacket);
+        figure.add(lawyerPiece(g.collar, LAWYER.shirt, 0, 1.22, 0.13));
+        figure.add(lawyerPiece(g.tie, tieMat, 0, 1.08, 0.16));
+        figure.add(lawyerPiece(g.head, LAWYER.skin, 0, 1.5, 0));
+        figure.add(lawyerPiece(g.hair, LAWYER.hair, 0, 1.64, -0.01));
+        figure.add(lawyerPiece(g.glasses, LAWYER.glass, 0, 1.52, 0.15));
+
+        const armL = lawyerPiece(g.arm, suitMat, -0.3, 0.98, 0);
+        const armR = lawyerPiece(g.arm, suitMat, 0.3, 0.98, 0);
+        if (type === 'shooter') {
+            armL.rotation.x = -1.15;
+            armL.position.set(-0.28, 1.08, 0.14);
+        }
+        figure.add(armL);
+        figure.add(armR);
+
+        const briefcase = new THREE.Group();
+        briefcase.name = 'briefcase';
+        const caseBody = lawyerPiece(g.case, caseMat, 0, 0, 0);
+        caseBody.castShadow = true;
+        briefcase.add(caseBody);
+        briefcase.add(lawyerPiece(g.clasp, LAWYER.gold, 0, 0.02, 0.045));
+        briefcase.add(lawyerPiece(g.handle, LAWYER.gold, 0, 0.12, 0));
+        if (type === 'shooter') {
+            const paper = lawyerPiece(g.paper, tieMat, 0.02, 0.08, 0.05);
+            paper.rotation.z = 0.25;
+            briefcase.add(paper);
+            briefcase.position.set(-0.36, 1.18, 0.36);
+            briefcase.rotation.x = -0.45;
+        } else if (type === 'bomber') {
+            briefcase.position.set(-0.36, 0.58, 0.22);
+        } else if (type === 'tank') {
+            briefcase.position.set(-0.4, 0.55, 0.2);
+        } else {
+            briefcase.position.set(-0.34, 0.62, 0.18);
+        }
+        const caseScale = type === 'bomber' ? 1.45 : type === 'tank' ? 1.28 : 1;
+        briefcase.scale.setScalar(caseScale);
+        figure.add(briefcase);
+
+        figure.scale.set(size[0] / 0.72, size[1] / 1.72, size[0] / 0.72);
+        enemy.add(figure);
+        return {
+            suit: jacket,
+            briefcase,
+            caseScale
+        };
+    }
+
     function createEnemy(type) {
         const enemy = new THREE.Group();
         let health, speed, damage, scoreValue, size, color;
@@ -671,45 +797,7 @@
         damage = Math.round(damage * (1 + waveBonus * 0.06));
         scoreValue += waveBonus * 10;
 
-        const body = new THREE.Mesh(
-            new THREE.BoxGeometry(...size),
-            new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.3 })
-        );
-        body.position.y = size[1] / 2;
-        body.castShadow = true;
-        enemy.add(body);
-
-        const eyeGeo = new THREE.SphereGeometry(0.08, 8, 8);
-        const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-        const pupilGeo = new THREE.SphereGeometry(0.04, 8, 8);
-        const pupilMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
-        [[-0.15, 1], [0.15, 1]].forEach(side => {
-            const eye = new THREE.Mesh(eyeGeo, eyeMat);
-            eye.position.set(side[0], size[1] * 0.72, size[2] / 2 + 0.02);
-            enemy.add(eye);
-            const pupil = new THREE.Mesh(pupilGeo, pupilMat);
-            pupil.position.set(side[0], size[1] * 0.72, size[2] / 2 + 0.08);
-            enemy.add(pupil);
-        });
-
-        if (type === 'shooter') {
-            const barrel = new THREE.Mesh(
-                new THREE.BoxGeometry(0.12, 0.12, 0.7),
-                new THREE.MeshStandardMaterial({ color: 0x88eeff, metalness: 0.7, roughness: 0.25 })
-            );
-            barrel.position.set(0, size[1] * 0.62, size[2] / 2 + 0.28);
-            enemy.add(barrel);
-        }
-        if (type === 'bomber') {
-            const fuse = new THREE.Mesh(
-                new THREE.SphereGeometry(0.2, 8, 8),
-                new THREE.MeshStandardMaterial({
-                    color: 0xffaa22, emissive: 0xff5500, emissiveIntensity: 0.7
-                })
-            );
-            fuse.position.y = size[1] + 0.12;
-            enemy.add(fuse);
-        }
+        const lawyer = dressLawyer(enemy, type, size, color);
 
         const angle = Math.random() * Math.PI * 2;
         const dist = 28 + Math.random() * 6;
@@ -722,7 +810,10 @@
                 ? Math.max(850, 1450 - waveBonus * 60)
                 : Math.max(650, 1100 - waveBonus * 40),
             hitFlash: 0,
-            strafe: Math.random() < 0.5 ? 1 : -1
+            strafe: Math.random() < 0.5 ? 1 : -1,
+            suit: lawyer.suit,
+            briefcase: lawyer.briefcase,
+            caseScale: lawyer.caseScale
         };
 
         scene.add(enemy);
@@ -774,8 +865,8 @@
             } else if (data.type === 'bomber') {
                 enemy.position.x += (dx / dist) * step;
                 enemy.position.z += (dz / dist) * step;
-                const pulse = 1 + Math.sin(performance.now() / 110) * 0.1;
-                enemy.children[0].scale.setScalar(pulse);
+                const pulse = 1 + Math.sin(performance.now() / 110) * 0.12;
+                if (data.briefcase) data.briefcase.scale.setScalar(data.caseScale * pulse);
                 if (dist < 1.55) {
                     killEnemy(i);
                     continue;
@@ -795,14 +886,16 @@
                 }
             }
 
-            const body = enemy.children[0];
-            if (data.hitFlash > 0) {
-                data.hitFlash -= delta;
-                body.material.emissive.setHex(0xff4422);
-                body.material.emissiveIntensity = data.hitFlash * 6;
-            } else if (body.material.emissiveIntensity !== 0) {
-                body.material.emissive.setHex(0x000000);
-                body.material.emissiveIntensity = 0;
+            const suit = data.suit;
+            if (suit) {
+                if (data.hitFlash > 0) {
+                    data.hitFlash -= delta;
+                    suit.material.emissive.setHex(0xff4422);
+                    suit.material.emissiveIntensity = data.hitFlash * 6;
+                } else if (suit.material.emissiveIntensity !== 0) {
+                    suit.material.emissive.setHex(0x000000);
+                    suit.material.emissiveIntensity = 0;
+                }
             }
 
             enemy.position.x = Math.max(-37, Math.min(37, enemy.position.x));
