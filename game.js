@@ -34,7 +34,9 @@
             }
         };
         document.addEventListener('pointerlockchange', () => {
+            const wasLocked = controls.isLocked;
             controls.isLocked = document.pointerLockElement === domElement;
+            if (wasLocked && !controls.isLocked) pauseForFocusLoss();
         });
         document.addEventListener('mousemove', (event) => {
             if (document.pointerLockElement !== domElement) return;
@@ -120,7 +122,8 @@
     let highScore = 0;
     let bestWave = 0;
     let newBestThisRun = false;
-    let reloadToken = 0;
+    let reloadRemaining = 0;
+    let resetTouchState = () => {};
     let enemyShots = [];
     let rfpThrows = [];
     let rfpPickups = [];
@@ -1174,16 +1177,51 @@
         updateHUD();
     }
 
-    function segmentHitsSphere(ax, ay, az, bx, by, bz, cx, cy, cz, radius) {
-        const abx = bx - ax, aby = by - ay, abz = bz - az;
-        const acx = cx - ax, acy = cy - ay, acz = cz - az;
-        const len2 = abx * abx + aby * aby + abz * abz;
-        let t = len2 === 0 ? 0 : (acx * abx + acy * aby + acz * abz) / len2;
-        t = Math.max(0, Math.min(1, t));
-        const dx = ax + abx * t - cx;
-        const dy = ay + aby * t - cy;
-        const dz = az + abz * t - cz;
-        return dx * dx + dy * dy + dz * dz <= radius * radius;
+    // Return the first contact fraction in [0, 1], or Infinity for a miss.
+    function segmentSphereTime(ax, ay, az, bx, by, bz, cx, cy, cz, radius) {
+        const dx = bx - ax, dy = by - ay, dz = bz - az;
+        const ox = ax - cx, oy = ay - cy, oz = az - cz;
+        const c = ox * ox + oy * oy + oz * oz - radius * radius;
+        if (c <= 0) return 0;
+        const a = dx * dx + dy * dy + dz * dz;
+        if (a === 0) return Infinity;
+        const b = ox * dx + oy * dy + oz * dz;
+        const discriminant = b * b - a * c;
+        if (discriminant < 0) return Infinity;
+        const t = (-b - Math.sqrt(discriminant)) / a;
+        return t >= 0 && t <= 1 ? t : Infinity;
+    }
+
+    function segmentBoxTime(ax, ay, az, bx, by, bz, box) {
+        let near = 0, far = 1;
+        const origin = [ax, ay, az], end = [bx, by, bz];
+        const axes = ['x', 'y', 'z'];
+        for (let i = 0; i < 3; i++) {
+            const axis = axes[i], step = end[i] - origin[i];
+            if (step === 0) {
+                if (origin[i] < box.min[axis] || origin[i] > box.max[axis]) return Infinity;
+                continue;
+            }
+            const t1 = (box.min[axis] - origin[i]) / step;
+            const t2 = (box.max[axis] - origin[i]) / step;
+            near = Math.max(near, Math.min(t1, t2));
+            far = Math.min(far, Math.max(t1, t2));
+            if (near > far) return Infinity;
+        }
+        return near;
+    }
+
+    function worldHitTime(ax, ay, az, end, floor) {
+        let time = ay <= floor ? 0 : end.y <= floor ? (ay - floor) / (ay - end.y) : Infinity;
+        for (const box of wallBoxes) {
+            time = Math.min(time, segmentBoxTime(ax, ay, az, end.x, end.y, end.z, box));
+        }
+        return time;
+    }
+
+    function moveToContact(position, x, y, z, time) {
+        position.set(x + (position.x - x) * time,
+            y + (position.y - y) * time, z + (position.z - z) * time);
     }
 
     function updateBullets(delta) {
@@ -1199,53 +1237,30 @@
             bullet.position.z += data.direction.z * step;
             data.life -= delta;
 
-            let hit = false;
-            for (let j = enemies.length - 1; j >= 0; j--) {
-                const enemy = enemies[j];
-                const size = enemy.userData.size;
-                const radius = Math.max(size[0], size[2]) * 0.62 + 0.12;
-                const cy = size[1] * 0.55;
-                if (segmentHitsSphere(
-                    prevX, prevY, prevZ,
+            let contact = worldHitTime(prevX, prevY, prevZ, bullet.position, 0.04);
+            let target = -1;
+            for (let j = 0; j < enemies.length; j++) {
+                const enemy = enemies[j], size = enemy.userData.size;
+                const time = segmentSphereTime(prevX, prevY, prevZ,
                     bullet.position.x, bullet.position.y, bullet.position.z,
-                    enemy.position.x, cy, enemy.position.z,
-                    radius
-                )) {
+                    enemy.position.x, size[1] * 0.55, enemy.position.z,
+                    Math.max(size[0], size[2]) * 0.62 + 0.12);
+                // World geometry wins ties, so targets behind cover cannot be hit.
+                if (time < contact) { contact = time; target = j; }
+            }
+            const hit = Number.isFinite(contact);
+            if (hit) {
+                moveToContact(bullet.position, prevX, prevY, prevZ, contact);
+                if (target >= 0) {
+                    const enemy = enemies[target];
                     enemy.userData.health -= data.damage;
                     enemy.userData.hitFlash = 0.16;
-                    if (enemy.userData.type !== 'bomber') {
-                        enemy.userData.coverUntil = performance.now() + 1400;
-                    }
+                    if (enemy.userData.type !== 'bomber') enemy.userData.coverUntil = performance.now() + 1400;
                     createParticles(bullet.position, 0xd8dce2, 3);
                     flashCrosshair();
-                    if (enemy.userData.health <= 0) killEnemy(j);
+                    if (enemy.userData.health <= 0) killEnemy(target);
                     else playSound('hit');
-                    hit = true;
-                    break;
-                }
-            }
-
-            if (!hit) {
-                ray.origin.set(prevX, prevY, prevZ);
-                ray.direction.copy(data.direction);
-                const travel = Math.hypot(
-                    bullet.position.x - prevX,
-                    bullet.position.y - prevY,
-                    bullet.position.z - prevZ
-                );
-                for (let k = 0; k < wallBoxes.length; k++) {
-                    const box = wallBoxes[k];
-                    if (box.containsPoint(bullet.position)) {
-                        hit = true;
-                        break;
-                    }
-                    const point = ray.intersectBox(box, rayHit);
-                    if (point && point.distanceTo(ray.origin) <= travel + 0.08) {
-                        hit = true;
-                        break;
-                    }
-                }
-                if (hit) createParticles(bullet.position, 0x99aabb, 3);
+                } else createParticles(bullet.position, 0x99aabb, 3);
             }
 
             if (hit || data.life <= 0 ||
@@ -1348,19 +1363,29 @@
     }
 
     function spawnRfpPickup() {
-        if (rfpPickups.length >= 6) return;
+        // Require a player-width clear route, not merely an empty endpoint.
+        let x = camera.position.x;
+        let z = camera.position.z;
         for (let n = 0; n < 18; n++) {
-            const x = (Math.random() * 2 - 1) * 28;
-            const z = (Math.random() * 2 - 1) * 28;
-            if (blocked(x, z)) continue;
-            if (Math.hypot(x - camera.position.x, z - camera.position.z) < 8) continue;
-            const doc = makeRfpPickup();
-            doc.position.set(x, 0.85, z);
-            doc.userData = { bob: Math.random() * Math.PI * 2 };
-            scene.add(doc);
-            rfpPickups.push(doc);
-            return;
+            const candidateX = (Math.random() * 2 - 1) * 28;
+            const candidateZ = (Math.random() * 2 - 1) * 28;
+            if (blocked(candidateX, candidateZ)) continue;
+            if (Math.hypot(candidateX - x, candidateZ - z) < 8) continue;
+            const obstructed = wallBoxes.some(box => Number.isFinite(segmentBoxTime(
+                x, 1, z, candidateX, 1, candidateZ,
+                { min: { x: box.min.x - 0.4, y: box.min.y, z: box.min.z - 0.4 },
+                  max: { x: box.max.x + 0.4, y: box.max.y, z: box.max.z + 0.4 } })));
+            if (obstructed) continue;
+            x = candidateX;
+            z = candidateZ;
+            break;
         }
+        // The player's current walkable position is the guaranteed fallback.
+        const doc = makeRfpPickup();
+        doc.position.set(x, 0.85, z);
+        doc.userData = { bob: Math.random() * Math.PI * 2 };
+        scene.add(doc);
+        rfpPickups.push(doc);
     }
 
     function yellDemand() {
@@ -1400,6 +1425,12 @@
         camera.getWorldDirection(direction);
         doc.position.copy(camera.position).addScaledVector(direction, 0.85);
         doc.position.y -= 0.12;
+        const launchContact = worldHitTime(camera.position.x, camera.position.y, camera.position.z, doc.position, 0.16);
+        if (Number.isFinite(launchContact)) {
+            moveToContact(doc.position, camera.position.x, camera.position.y, camera.position.z, launchContact);
+            explodeRfp(doc.position.clone());
+            return;
+        }
         const velocity = direction.clone().multiplyScalar(16);
         velocity.y += 5.2;
         doc.userData = {
@@ -1473,44 +1504,18 @@
             shot.rotation.y += data.spin.y * delta;
             shot.rotation.z += data.spin.z * delta;
 
-            let explode = data.life <= 0;
-            if (!explode && data.armed <= 0) {
-                if (shot.position.y <= 0.16) explode = true;
-                if (!explode) {
-                    const stepX = shot.position.x - prevX;
-                    const stepY = shot.position.y - prevY;
-                    const stepZ = shot.position.z - prevZ;
-                    const travel = Math.hypot(stepX, stepY, stepZ);
-                    if (travel > 0.001) {
-                        ray.origin.set(prevX, prevY, prevZ);
-                        ray.direction.set(stepX / travel, stepY / travel, stepZ / travel);
-                        for (let k = 0; k < wallBoxes.length; k++) {
-                            if (wallBoxes[k].containsPoint(shot.position) ||
-                                (ray.intersectBox(wallBoxes[k], rayHit) &&
-                                 rayHit.distanceTo(ray.origin) <= travel + 0.08)) {
-                                explode = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-                if (!explode) {
-                    for (let e = 0; e < enemies.length; e++) {
-                        const enemy = enemies[e];
-                        const radius = Math.max(enemy.userData.size[0], enemy.userData.size[2]) * 0.7 + 0.15;
-                        if (segmentHitsSphere(
-                            prevX, prevY, prevZ,
-                            shot.position.x, shot.position.y, shot.position.z,
-                            enemy.position.x, enemy.userData.size[1] * 0.5, enemy.position.z,
-                            radius
-                        )) {
-                            explode = true;
-                            break;
-                        }
-                    }
+            // Arming delays enemy contact only; cover and the floor always collide.
+            let contact = worldHitTime(prevX, prevY, prevZ, shot.position, 0.16);
+            if (data.armed <= 0) {
+                for (const enemy of enemies) {
+                    contact = Math.min(contact, segmentSphereTime(prevX, prevY, prevZ,
+                        shot.position.x, shot.position.y, shot.position.z,
+                        enemy.position.x, enemy.userData.size[1] * 0.5, enemy.position.z,
+                        Math.max(enemy.userData.size[0], enemy.userData.size[2]) * 0.7 + 0.15));
                 }
             }
-            if (!explode) continue;
+            if (Number.isFinite(contact)) moveToContact(shot.position, prevX, prevY, prevZ, contact);
+            else if (data.life > 0) continue;
             const pos = shot.position.clone();
             if (pos.y < 0.3) pos.y = 0.45;
             scene.remove(shot);
@@ -1567,32 +1572,16 @@
             shot.rotation.z += data.spin.z * delta;
             data.life -= delta;
 
-            let hit = segmentHitsSphere(
-                prevX, prevY, prevZ,
+            const worldTime = worldHitTime(prevX, prevY, prevZ, shot.position, 0.04);
+            const playerTime = segmentSphereTime(prevX, prevY, prevZ,
                 shot.position.x, shot.position.y, shot.position.z,
-                camera.position.x, 1.3, camera.position.z,
-                0.65
-            );
+                camera.position.x, 1.3, camera.position.z, 0.65);
+            const contact = Math.min(worldTime, playerTime);
+            const hit = Number.isFinite(contact);
             if (hit) {
-                damagePlayer(data.damage);
-                createParticles(shot.position, 0xf4efe4, 5);
-            } else if (shot.position.y < 0.04) {
-                hit = true;
-                createParticles(shot.position, 0xf4efe4, 3);
-            } else {
-                ray.origin.set(prevX, prevY, prevZ);
-                ray.direction.set(stepX, stepY, stepZ);
-                const travel = ray.direction.length();
-                if (travel > 0.0001) ray.direction.multiplyScalar(1 / travel);
-                for (let k = 0; k < wallBoxes.length && travel > 0.0001; k++) {
-                    if (wallBoxes[k].containsPoint(shot.position) ||
-                        (ray.intersectBox(wallBoxes[k], rayHit) &&
-                         rayHit.distanceTo(ray.origin) <= travel + 0.08)) {
-                        hit = true;
-                        createParticles(shot.position, 0xf4efe4, 3);
-                        break;
-                    }
-                }
+                moveToContact(shot.position, prevX, prevY, prevZ, contact);
+                if (playerTime < worldTime) damagePlayer(data.damage);
+                createParticles(shot.position, 0xf4efe4, playerTime < worldTime ? 5 : 3);
             }
 
             if (hit || data.life <= 0 || Math.abs(shot.position.x) > 48 || Math.abs(shot.position.z) > 48) {
@@ -1614,7 +1603,7 @@
 
     function killEnemy(index) {
         const enemy = enemies[index];
-        if (!enemy) return;
+        if (!enemy || gameState !== STATE.PLAYING) return;
         const data = enemy.userData;
         const color = data.type === 'tank' ? 0x8844ff
             : data.type === 'shooter' ? 0x33ddff
@@ -1623,8 +1612,10 @@
             : 0xff4444;
         if (data.type === 'bomber') bomberBlast(enemy.position, data.damage);
         createParticles(enemy.position.clone().setY(data.size[1] * 0.5), color, 12);
-        PLAYER.score += data.scoreValue;
-        rememberScore();
+        if (gameState === STATE.PLAYING) {
+            PLAYER.score += data.scoreValue;
+            rememberScore();
+        }
         if (data.type !== 'bomber') playSound('kill');
         scene.remove(enemy);
         disposeObject(enemy);
@@ -1640,6 +1631,7 @@
     }
 
     function completeWave() {
+        if (gameState !== STATE.PLAYING || PLAYER.health <= 0 || waveConfig.waveComplete) return;
         waveConfig.waveComplete = true;
         waveConfig.waveDelay = 2200;
         PLAYER.wave++;
@@ -1654,6 +1646,7 @@
     }
 
     function updateWaveSystem(delta) {
+        if (gameState !== STATE.PLAYING) return;
         if (waveConfig.waveComplete) {
             waveConfig.waveDelay -= delta * 1000;
             if (waveConfig.waveDelay <= 0) {
@@ -1684,21 +1677,46 @@
     }
 
     function reload() {
-        if (WEAPON.reloading || WEAPON.ammo === WEAPON.maxAmmo) return;
+        if (gameState !== STATE.PLAYING || WEAPON.reloading || WEAPON.ammo === WEAPON.maxAmmo) return;
         WEAPON.reloading = true;
-        const token = ++reloadToken;
+        reloadRemaining = WEAPON.reloadTime;
         dom.reloadIndicator.classList.add('show');
         playSound('reload');
-        setTimeout(() => {
-            if (token !== reloadToken) return;
-            WEAPON.ammo = WEAPON.maxAmmo;
-            WEAPON.reloading = false;
-            dom.reloadIndicator.classList.remove('show');
-            updateHUD();
-        }, WEAPON.reloadTime);
+        updateHUD();
+    }
+
+    function updateReload(delta) {
+        if (gameState !== STATE.PLAYING || !WEAPON.reloading) return;
+        reloadRemaining = Math.max(0, reloadRemaining - delta * 1000);
+        if (reloadRemaining > 0) return;
+        WEAPON.ammo = WEAPON.maxAmmo;
+        WEAPON.reloading = false;
+        dom.reloadIndicator.classList.remove('show');
+        updateHUD();
+    }
+
+    function resetInput() {
+        Object.keys(keys).forEach(key => delete keys[key]);
+        mouseDown = false;
+        touchFirePressed = false;
+        sprintHeld = false;
+        joystickDeltaX = 0;
+        joystickDeltaY = 0;
+        resetTouchState();
+        dom.joystickThumb.style.transform = 'translate(-50%, -50%)';
+        dom.fireBtn.style.background = 'rgba(255,50,50,0.3)';
+    }
+
+    function pauseForFocusLoss() {
+        resetInput();
+        if (gameState === STATE.PLAYING) togglePause();
     }
 
     function setupEventListeners() {
+        window.addEventListener('blur', pauseForFocusLoss);
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) pauseForFocusLoss();
+        });
         document.addEventListener('keydown', onKeyDown);
         document.addEventListener('keyup', onKeyUp);
         document.addEventListener('mousedown', onMouseDown);
@@ -1736,7 +1754,8 @@
     }
 
     function onKeyDown(event) {
-        keys[event.code] = true;
+        if (gameState === STATE.PLAYING) keys[event.code] = true;
+        if (event.repeat) return;
         if (event.code === 'KeyR' && gameState === STATE.PLAYING) reload();
         if (event.code === 'KeyM') toggleMusic();
         if (event.code === 'Escape' || event.code === 'KeyP') {
@@ -1757,6 +1776,7 @@
         }
         if (event.button !== 0) return;
         if (gameState !== STATE.PLAYING) return;
+        if (event.target !== renderer.domElement) return;
         if (!controls.isLocked) controls.lock();
         mouseDown = true;
     }
@@ -1773,9 +1793,15 @@
         let lookTouchId = null;
         let lookStartX = 0;
         let lookStartY = 0;
+        resetTouchState = () => {
+            joystickActive = false;
+            joystickId = null;
+            lookTouchId = null;
+        };
 
         dom.joystickZone.addEventListener('touchstart', event => {
             event.preventDefault();
+            if (gameState !== STATE.PLAYING) return;
             const touch = event.changedTouches[0];
             joystickActive = true;
             joystickId = touch.identifier;
@@ -1812,6 +1838,7 @@
 
         dom.lookZone.addEventListener('touchstart', event => {
             event.preventDefault();
+            if (gameState !== STATE.PLAYING) return;
             const touch = event.changedTouches[0];
             lookTouchId = touch.identifier;
             lookStartX = touch.clientX;
@@ -1842,6 +1869,7 @@
 
         dom.fireBtn.addEventListener('touchstart', event => {
             event.preventDefault();
+            if (gameState !== STATE.PLAYING) return;
             touchFirePressed = true;
             dom.fireBtn.style.background = 'rgba(255,50,50,0.5)';
         }, { passive: false });
@@ -1923,7 +1951,8 @@
         WEAPON.reloading = false;
         WEAPON.currentRecoil = 0;
         WEAPON.lastShot = 0;
-        reloadToken++;
+        reloadRemaining = 0;
+        resetInput();
         newBestThisRun = false;
         sprintHeld = false;
         STAMINA.current = STAMINA.max;
@@ -1959,9 +1988,7 @@
     function togglePause() {
         if (gameState === STATE.PLAYING) {
             gameState = STATE.PAUSED;
-            mouseDown = false;
-            touchFirePressed = false;
-            sprintHeld = false;
+            resetInput();
             if (controls.isLocked) controls.unlock();
             if (dom.pauseScreen) dom.pauseScreen.style.display = 'flex';
             return;
@@ -1969,6 +1996,9 @@
         if (gameState !== STATE.PAUSED) return;
         gameState = STATE.PLAYING;
         if (dom.pauseScreen) dom.pauseScreen.style.display = 'none';
+        resetInput();
+        clock.getDelta();
+        if (!document.documentElement.classList.contains('touch-ui')) controls.lock();
     }
 
     function restartGame() {
@@ -1978,6 +2008,10 @@
     function gameOver() {
         if (gameState === STATE.GAME_OVER) return;
         gameState = STATE.GAME_OVER;
+        resetInput();
+        WEAPON.reloading = false;
+        reloadRemaining = 0;
+        dom.reloadIndicator.classList.remove('show');
         document.body.classList.remove('playing');
         mouseDown = false;
         touchFirePressed = false;
@@ -2091,8 +2125,8 @@
         const len = Math.hypot(inputX, inputZ);
         WEAPON.bobMoving = len > 0.08;
         if (len > 0) {
-            inputX /= len;
-            inputZ /= len;
+            inputX /= Math.max(1, len);
+            inputZ /= Math.max(1, len);
 
             camera.getWorldDirection(moveDir);
             moveDir.y = 0;
@@ -2146,11 +2180,12 @@
         requestAnimationFrame(animate);
         const delta = Math.min(clock.getDelta(), 0.05);
         if (gameState === STATE.PLAYING) {
+            updateReload(delta);
             updatePlayerMovement(delta);
             updateEnemies(delta);
-            updateBullets(delta);
-            updateEnemyShots(delta);
-            updateRfp(delta);
+            if (gameState === STATE.PLAYING) updateBullets(delta);
+            if (gameState === STATE.PLAYING) updateEnemyShots(delta);
+            if (gameState === STATE.PLAYING) updateRfp(delta);
             updateParticles(delta);
             updateWaveSystem(delta);
         }
