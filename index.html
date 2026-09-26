@@ -282,7 +282,7 @@
             font-size: 24px;
             margin-bottom: 32px;
         }
-        #restart-btn {
+        #restart-btn, #resume-btn {
             background: linear-gradient(135deg, #ff6600, #ff3300);
             color: #fff;
             border: none;
@@ -293,6 +293,72 @@
             cursor: pointer;
             letter-spacing: 1px;
             text-transform: uppercase;
+        }
+        #stamina-bar-container {
+            width: 160px; height: 4px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 6px;
+        }
+        #stamina-bar {
+            width: 100%; height: 100%;
+            background: #7ec8ff;
+            border-radius: 2px;
+        }
+        #pause-btn, #sprint-btn {
+            position: absolute;
+            z-index: 40;
+            pointer-events: auto;
+            background: rgba(0,0,0,0.55);
+            color: #fff;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.6px;
+            cursor: pointer;
+            touch-action: none;
+        }
+        #pause-btn {
+            top: calc(46px + env(safe-area-inset-top));
+            left: 50%;
+            transform: translateX(-50%);
+            display: none;
+        }
+        body.playing #pause-btn { display: block; }
+        #sprint-btn {
+            left: 24px;
+            bottom: calc(172px + env(safe-area-inset-bottom));
+            width: 64px; height: 64px;
+            border-radius: 50%;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+        html.touch-ui body.playing #sprint-btn { display: flex; }
+        #sprint-btn.held { background: rgba(126, 200, 255, 0.45); }
+        #pause-screen {
+            position: absolute;
+            inset: 0;
+            background: rgba(0,0,0,0.82);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 120;
+            padding: 24px;
+        }
+        #pause-screen h2 {
+            color: #fff;
+            font-size: 36px;
+            margin-bottom: 12px;
+        }
+        #pause-screen p {
+            color: rgba(255,255,255,0.65);
+            margin-bottom: 24px;
+            text-align: center;
         }
         #mute-btn {
             position: absolute;
@@ -365,7 +431,7 @@
             #hud { padding: max(8px, env(safe-area-inset-top)) 8px 6px; }
             .hud-item { padding: 4px 8px; }
             .hud-item .value { font-size: 16px; }
-            #health-bar-container, #ammo-bar-container { width: 96px; }
+            #health-bar-container, #ammo-bar-container, #stamina-bar-container { width: 96px; }
             #start-screen p { font-size: 13px; margin-bottom: 18px; }
         }
         @media (max-width: 380px) {
@@ -391,6 +457,8 @@
     <div id="app">
     <div id="game-container"></div>
     <button id="mute-btn" type="button">MUSIC ON</button>
+    <button id="pause-btn" type="button">PAUSE</button>
+    <button id="sprint-btn" type="button">RUN</button>
 
     <!-- HUD -->
     <div id="hud">
@@ -400,6 +468,9 @@
                 <div class="value" id="health-value">100</div>
                 <div id="health-bar-container">
                     <div id="health-bar"></div>
+                </div>
+                <div id="stamina-bar-container">
+                    <div id="stamina-bar"></div>
                 </div>
             </div>
             <div class="hud-item">
@@ -445,13 +516,19 @@
     <div id="start-screen">
         <h1>Sara Goes to Work</h1>
         <p>
-            WASD to move • Mouse to look • Click to fire<br>
-            R to reload • M for music • Survive the waves<br>
-            Phone: stick to move, drag the right side to look<br>
+            WASD to move • Shift to sprint • Mouse to look<br>
+            Click to fire • R to reload • Esc to pause<br>
+            Phone: stick to move, RUN to sprint, drag the right side<br>
             Lawyers with briefcases • Cyan ones file from range • Green cases explode
         </p>
         <p id="menu-best"></p>
         <button id="start-btn">PLAY</button>
+    </div>
+
+    <div id="pause-screen">
+        <h2>PAUSED</h2>
+        <p>Esc or the button to resume</p>
+        <button id="resume-btn" type="button">RESUME</button>
     </div>
 
     <!-- Game over -->
@@ -474,6 +551,6 @@
     </div>
     <!-- Three.js -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-    <script src="game.js?v=7"></script>
+    <script src="game.js?v=8"></script>
 </body>
 </html>

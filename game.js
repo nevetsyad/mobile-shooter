@@ -1,5 +1,5 @@
 // ============================================================
-// SARA GOES TO WORK - Phase 3: Soundtrack and enemy variety
+// SARA GOES TO WORK - Phase 4: cover, flanking, sprint, pause
 // Procedural music, shooter and bomber enemies, saved best wave
 // ============================================================
 
@@ -86,6 +86,9 @@
     let scene, camera, renderer, controls;
     let arena;
     let wallBoxes = [];
+    let coverPoints = [];
+    let sprintHeld = false;
+    const STAMINA = { current: 100, max: 100, regenDelay: 0 };
     let clock;
 
     const PLAYER = {
@@ -170,6 +173,11 @@
         ammoValue: document.getElementById('ammo-value'),
         ammoBar: document.getElementById('ammo-bar'),
         crosshair: document.getElementById('crosshair'),
+        pauseBtn: document.getElementById('pause-btn'),
+        resumeBtn: document.getElementById('resume-btn'),
+        pauseScreen: document.getElementById('pause-screen'),
+        sprintBtn: document.getElementById('sprint-btn'),
+        staminaBar: document.getElementById('stamina-bar'),
         touchControls: document.getElementById('touch-controls'),
         joystickZone: document.getElementById('joystick-zone'),
         joystickBase: document.getElementById('joystick-base'),
@@ -475,11 +483,16 @@
         camera.add(gunLight);
         scene.add(camera);
 
-        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        const phone = document.documentElement.classList.contains('touch-ui');
+        renderer = new THREE.WebGLRenderer({
+            antialias: !phone,
+            alpha: false,
+            powerPreference: 'high-performance'
+        });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, phone ? 1.5 : 2));
         renderer.setSize(view.width, view.height, false);
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.shadowMap.enabled = !phone;
+        renderer.shadowMap.type = phone ? THREE.BasicShadowMap : THREE.PCFShadowMap;
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         renderer.toneMappingExposure = 1.2;
         dom.container.appendChild(renderer.domElement);
@@ -502,9 +515,10 @@
 
         const dirLight = new THREE.DirectionalLight(0x8888ff, 0.85);
         dirLight.position.set(20, 30, 10);
-        dirLight.castShadow = true;
-        dirLight.shadow.mapSize.width = 2048;
-        dirLight.shadow.mapSize.height = 2048;
+        const phoneShadows = document.documentElement.classList.contains('touch-ui');
+        dirLight.castShadow = !phoneShadows;
+        dirLight.shadow.mapSize.width = 1024;
+        dirLight.shadow.mapSize.height = 1024;
         dirLight.shadow.camera.near = 0.5;
         dirLight.shadow.camera.far = 100;
         dirLight.shadow.camera.left = -40;
@@ -551,8 +565,8 @@
          [40, wallHeight / 2, 0, [wallThickness, wallHeight, 80]]].forEach(config => {
             const mesh = new THREE.Mesh(new THREE.BoxGeometry(...config[3]), wallMat);
             mesh.position.set(config[0], config[1], config[2]);
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
+            mesh.castShadow = !document.documentElement.classList.contains('touch-ui');
+            mesh.receiveShadow = !document.documentElement.classList.contains('touch-ui');
             group.add(mesh);
             walls.push(mesh);
         });
@@ -569,8 +583,8 @@
          [-25, 3, 25, [2, 6, 2]], [25, 3, 25, [2, 6, 2]]].forEach(config => {
             const mesh = new THREE.Mesh(new THREE.BoxGeometry(...config[3]), obstacleMat);
             mesh.position.set(config[0], config[1], config[2]);
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
+            mesh.castShadow = !document.documentElement.classList.contains('touch-ui');
+            mesh.receiveShadow = !document.documentElement.classList.contains('touch-ui');
             group.add(mesh);
             walls.push(mesh);
         });
@@ -582,6 +596,62 @@
     function cacheWallBoxes() {
         arena.group.updateMatrixWorld(true);
         wallBoxes = arena.walls.map(wall => new THREE.Box3().setFromObject(wall));
+        coverPoints = [];
+        for (let i = 4; i < wallBoxes.length; i++) {
+            const box = wallBoxes[i];
+            const center = box.getCenter(new THREE.Vector3());
+            const size = box.getSize(new THREE.Vector3());
+            const padX = size.x / 2 + 1.4;
+            const padZ = size.z / 2 + 1.4;
+            [[center.x + padX, center.z], [center.x - padX, center.z],
+             [center.x, center.z + padZ], [center.x, center.z - padZ]].forEach(([x, z]) => {
+                if (Math.abs(x) < 35 && Math.abs(z) < 35) coverPoints.push({ x, z });
+            });
+        }
+    }
+
+    function lineBlocked(x1, z1, x2, z2) {
+        const dx = x2 - x1;
+        const dz = z2 - z1;
+        const len = Math.hypot(dx, dz);
+        if (len < 0.25) return false;
+        ray.origin.set(x1, 1.1, z1);
+        ray.direction.set(dx / len, 0, dz / len);
+        for (let i = 4; i < wallBoxes.length; i++) {
+            const hit = ray.intersectBox(wallBoxes[i], rayHit);
+            if (hit && ray.origin.distanceTo(hit) < len - 0.3) return true;
+        }
+        return false;
+    }
+
+    function nearestCover(x, z, px, pz, wantHidden) {
+        let best = null;
+        let bestScore = Infinity;
+        for (let i = 0; i < coverPoints.length; i++) {
+            const spot = coverPoints[i];
+            const dSelf = Math.hypot(spot.x - x, spot.z - z);
+            const dPlayer = Math.hypot(spot.x - px, spot.z - pz);
+            if (dPlayer < 3.2 || dPlayer > 18) continue;
+            const hidden = lineBlocked(spot.x, spot.z, px, pz);
+            if (wantHidden !== hidden) continue;
+            const preferred = wantHidden ? 7 : 11;
+            const score = dSelf + Math.abs(dPlayer - preferred) * 0.4;
+            if (score < bestScore) {
+                bestScore = score;
+                best = spot;
+            }
+        }
+        return best;
+    }
+
+    function stepToward(enemy, tx, tz, step) {
+        const mx = tx - enemy.position.x;
+        const mz = tz - enemy.position.z;
+        const md = Math.hypot(mx, mz) || 0.001;
+        if (md < 0.3) return md;
+        enemy.position.x += (mx / md) * Math.min(step, md);
+        enemy.position.z += (mz / md) * Math.min(step, md);
+        return md;
     }
 
     let weaponGroup;
@@ -813,7 +883,15 @@
             strafe: Math.random() < 0.5 ? 1 : -1,
             suit: lawyer.suit,
             briefcase: lawyer.briefcase,
-            caseScale: lawyer.caseScale
+            caseScale: lawyer.caseScale,
+            tactic: type === 'bomber' ? 'rush'
+                : type === 'shooter' ? 'cover'
+                : type === 'fast' || Math.random() < 0.5 ? 'flank' : 'rush',
+            flankSide: Math.random() < 0.5 ? 1 : -1,
+            coverX: 0,
+            coverZ: 0,
+            coverUntil: 0,
+            coverLock: 0
         };
 
         scene.add(enemy);
@@ -845,44 +923,78 @@
 
             enemy.lookAt(px, enemy.position.y, pz);
             const step = data.speed * delta;
+            const now = performance.now();
 
-            if (data.type === 'shooter') {
-                if (dist > 13) {
-                    enemy.position.x += (dx / dist) * step;
-                    enemy.position.z += (dz / dist) * step;
-                } else if (dist < 7) {
-                    enemy.position.x -= (dx / dist) * step;
-                    enemy.position.z -= (dz / dist) * step;
-                } else {
-                    enemy.position.x += (-dz / dist) * step * data.strafe;
-                    enemy.position.z += (dx / dist) * step * data.strafe;
+            if (data.type !== 'bomber' && data.hitFlash > 0.1) {
+                data.coverUntil = now + (data.type === 'tank' ? 2600 : 1600);
+                if (now > data.coverLock) {
+                    const hide = nearestCover(enemy.position.x, enemy.position.z, px, pz, true);
+                    if (hide) {
+                        data.coverX = hide.x;
+                        data.coverZ = hide.z;
+                        data.coverLock = now + 800;
+                    }
                 }
-                data.attackCooldown -= delta * 1000;
-                if (data.attackCooldown <= 0 && dist < 22) {
-                    fireEnemyShot(enemy);
-                    data.attackCooldown = data.attackRate;
-                }
-            } else if (data.type === 'bomber') {
-                enemy.position.x += (dx / dist) * step;
-                enemy.position.z += (dz / dist) * step;
-                const pulse = 1 + Math.sin(performance.now() / 110) * 0.12;
+            }
+
+            if (data.type === 'bomber') {
+                stepToward(enemy, px, pz, step);
+                const pulse = 1 + Math.sin(now / 110) * 0.12;
                 if (data.briefcase) data.briefcase.scale.setScalar(data.caseScale * pulse);
                 if (dist < 1.55) {
                     killEnemy(i);
                     continue;
                 }
-            } else {
-                if (dist > 1.6) {
-                    enemy.position.x += (dx / dist) * step;
-                    enemy.position.z += (dz / dist) * step;
+            } else if (now < data.coverUntil && (data.coverX || data.coverZ)) {
+                stepToward(enemy, data.coverX, data.coverZ, step);
+                const atCover = Math.hypot(data.coverX - enemy.position.x, data.coverZ - enemy.position.z) < 0.9;
+                if (data.type === 'shooter' && atCover && lineBlocked(enemy.position.x, enemy.position.z, px, pz)) {
+                    enemy.position.x += (-dz / dist) * step * 0.7 * data.flankSide;
+                    enemy.position.z += (dx / dist) * step * 0.7 * data.flankSide;
                 }
-                if (dist < 1.8) {
-                    data.attackCooldown -= delta * 1000;
-                    if (data.attackCooldown <= 0) {
-                        damagePlayer(data.damage);
-                        data.attackCooldown = data.attackRate;
-                        playSound('hit');
+            } else if (data.type === 'shooter') {
+                if (now > data.coverLock) {
+                    const peek = nearestCover(enemy.position.x, enemy.position.z, px, pz, false);
+                    if (peek) {
+                        data.coverX = peek.x;
+                        data.coverZ = peek.z;
                     }
+                    data.coverLock = now + 1200;
+                }
+                if (data.coverX || data.coverZ) {
+                    const dSpot = Math.hypot(data.coverX - enemy.position.x, data.coverZ - enemy.position.z);
+                    if (dSpot > 1.1) stepToward(enemy, data.coverX, data.coverZ, step);
+                    else {
+                        enemy.position.x += (-dz / dist) * step * 0.4 * data.strafe;
+                        enemy.position.z += (dx / dist) * step * 0.4 * data.strafe;
+                    }
+                } else if (dist > 12) {
+                    stepToward(enemy, px, pz, step * 0.85);
+                }
+            } else if (data.tactic === 'flank' && dist > 4.5) {
+                stepToward(
+                    enemy,
+                    px + (-dz / dist) * 6 * data.flankSide,
+                    pz + (dx / dist) * 6 * data.flankSide,
+                    step
+                );
+            } else if (dist > 1.6) {
+                stepToward(enemy, px, pz, step);
+            }
+
+            if (data.type === 'shooter') {
+                data.attackCooldown -= delta * 1000;
+                if (data.attackCooldown <= 0 && dist < 22 &&
+                    !lineBlocked(enemy.position.x, enemy.position.z, px, pz)) {
+                    fireEnemyShot(enemy);
+                    data.attackCooldown = data.attackRate;
+                }
+            } else if (data.type !== 'bomber' && dist < 1.8) {
+                data.attackCooldown -= delta * 1000;
+                if (data.attackCooldown <= 0) {
+                    damagePlayer(data.damage);
+                    data.attackCooldown = data.attackRate;
+                    playSound('hit');
                 }
             }
 
@@ -1016,6 +1128,9 @@
                 )) {
                     enemy.userData.health -= data.damage;
                     enemy.userData.hitFlash = 0.16;
+                    if (enemy.userData.type !== 'bomber') {
+                        enemy.userData.coverUntil = performance.now() + 1400;
+                    }
                     createParticles(bullet.position, 0xffee66, 4);
                     flashCrosshair();
                     if (enemy.userData.health <= 0) killEnemy(j);
@@ -1287,6 +1402,29 @@
         dom.startBtn.addEventListener('click', startGame);
         dom.restartBtn.addEventListener('click', restartGame);
         if (dom.muteBtn) dom.muteBtn.addEventListener('click', toggleMusic);
+        if (dom.pauseBtn) dom.pauseBtn.addEventListener('click', togglePause);
+        if (dom.resumeBtn) dom.resumeBtn.addEventListener('click', togglePause);
+        if (dom.sprintBtn) {
+            const startSprint = event => {
+                event.preventDefault();
+                sprintHeld = true;
+                dom.sprintBtn.classList.add('held');
+            };
+            const endSprint = event => {
+                event.preventDefault();
+                sprintHeld = false;
+                dom.sprintBtn.classList.remove('held');
+            };
+            dom.sprintBtn.addEventListener('touchstart', startSprint, { passive: false });
+            dom.sprintBtn.addEventListener('touchend', endSprint, { passive: false });
+            dom.sprintBtn.addEventListener('touchcancel', endSprint, { passive: false });
+            dom.sprintBtn.addEventListener('mousedown', startSprint);
+            window.addEventListener('mouseup', () => {
+                if (!sprintHeld) return;
+                sprintHeld = false;
+                if (dom.sprintBtn) dom.sprintBtn.classList.remove('held');
+            });
+        }
         setupTouchControls();
 
     }
@@ -1295,6 +1433,10 @@
         keys[event.code] = true;
         if (event.code === 'KeyR' && gameState === STATE.PLAYING) reload();
         if (event.code === 'KeyM') toggleMusic();
+        if (event.code === 'Escape' || event.code === 'KeyP') {
+            event.preventDefault();
+            togglePause();
+        }
     }
 
     function onKeyUp(event) {
@@ -1413,7 +1555,8 @@
         if (!camera || !renderer) return;
         camera.aspect = view.width / view.height;
         camera.updateProjectionMatrix();
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        const phone = document.documentElement.classList.contains('touch-ui');
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, phone ? 1.5 : 2));
         renderer.setSize(view.width, view.height, false);
         renderer.domElement.style.width = view.width + 'px';
         renderer.domElement.style.height = view.height + 'px';
@@ -1462,6 +1605,11 @@
         WEAPON.lastShot = 0;
         reloadToken++;
         newBestThisRun = false;
+        sprintHeld = false;
+        STAMINA.current = STAMINA.max;
+        STAMINA.regenDelay = 0;
+        if (dom.pauseScreen) dom.pauseScreen.style.display = 'none';
+        if (dom.sprintBtn) dom.sprintBtn.classList.remove('held');
         dom.reloadIndicator.classList.remove('show');
 
         clearActors();
@@ -1486,6 +1634,22 @@
         announceWave(1);
     }
 
+    function togglePause() {
+        if (gameState === STATE.PLAYING) {
+            gameState = STATE.PAUSED;
+            mouseDown = false;
+            touchFirePressed = false;
+            sprintHeld = false;
+            if (dom.sprintBtn) dom.sprintBtn.classList.remove('held');
+            if (controls.isLocked) controls.unlock();
+            if (dom.pauseScreen) dom.pauseScreen.style.display = 'flex';
+            return;
+        }
+        if (gameState !== STATE.PAUSED) return;
+        gameState = STATE.PLAYING;
+        if (dom.pauseScreen) dom.pauseScreen.style.display = 'none';
+    }
+
     function restartGame() {
         startGame();
     }
@@ -1499,6 +1663,8 @@
         const waveBeat = rememberWave();
         rememberScore();
         if (controls.isLocked) controls.unlock();
+        sprintHeld = false;
+        if (dom.pauseScreen) dom.pauseScreen.style.display = 'none';
         dom.finalScore.textContent = `Score ${PLAYER.score}  ·  Wave ${PLAYER.wave}`;
         if (dom.finalBest) {
             dom.finalBest.textContent = newBestThisRun
@@ -1568,7 +1734,27 @@
     function updatePlayerMovement(delta) {
         if (gameState !== STATE.PLAYING) return;
 
-        const speed = PLAYER.speed * delta;
+        const wantsSprint = (keys['ShiftLeft'] || keys['ShiftRight'] || sprintHeld) &&
+            (keys['KeyW'] || keys['KeyA'] || keys['KeyS'] || keys['KeyD'] ||
+             keys['ArrowUp'] || keys['ArrowDown'] || keys['ArrowLeft'] || keys['ArrowRight'] ||
+             joystickDeltaX !== 0 || joystickDeltaY !== 0) &&
+            STAMINA.current > 1;
+        let sprintMul = 1;
+        if (wantsSprint) {
+            sprintMul = 1.65;
+            STAMINA.current = Math.max(0, STAMINA.current - delta * 36);
+            STAMINA.regenDelay = 0.5;
+        } else {
+            STAMINA.regenDelay = Math.max(0, STAMINA.regenDelay - delta);
+            if (STAMINA.regenDelay === 0) {
+                STAMINA.current = Math.min(STAMINA.max, STAMINA.current + delta * 24);
+            }
+        }
+        if (dom.staminaBar) {
+            dom.staminaBar.style.width = `${(STAMINA.current / STAMINA.max) * 100}%`;
+        }
+
+        const speed = PLAYER.speed * sprintMul * delta;
         let inputX = 0;
         let inputZ = 0;
         if (keys['KeyW'] || keys['ArrowUp']) inputZ += 1;
