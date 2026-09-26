@@ -33,7 +33,7 @@ test('thin walls, parallel miss, starting inside and floor sweep',()=>{
 function combat(walls=[]) {
     return setup({wallBoxes:walls,enemies:[],bullets:[],enemyShots:[],scene:{remove(){}},
         performance:{now:()=>0},createParticles(){},flashCrosshair(){},playSound(){},killEnemy(){},
-        camera:{position:pos(5,1.3,0)},damagePlayer(){throw Error('damage through cover');}});
+        camera:{position:pos(5,1.3,0)},upgradeOpen:false,damagePlayer(){throw Error('damage through cover');}});
 }
 const enemy=x=>({position:pos(x,0,0),userData:{size:[1,2,1],health:100,type:'shooter'}});
 const bullet=()=>({position:pos(0,1.1,0),userData:{direction:pos(1,0,0),speed:100,life:1,damage:15}});

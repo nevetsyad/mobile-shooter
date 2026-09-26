@@ -127,6 +127,18 @@
     let enemyShots = [];
     let rfpThrows = [];
     let rfpPickups = [];
+    let blastRings = [];
+    let damageCue = null;
+    const RFP_RADIUS = 5.4;
+    const RFP_SELF_RADIUS = 2.8;
+    const BOMBER_RADIUS = 3.2;
+    // Caps are fixed before tuning: 4 ranks each. Every taken rank adds 6% enemy health.
+    const UPGRADE_CAPS = { magazine: 4, reload: 4, blast: 4 };
+    const UPGRADE_BASE = { maxAmmo: 30, reloadTime: 1500, radius: 5.4, damage: 58 };
+    let upgradeRanks = { magazine: 0, reload: 0, blast: 0 };
+    let upgradeOpen = false;
+    let rfpRadius = RFP_RADIUS;
+    let rfpDamage = 58;
     let rfpHeld = 0;
     let rfpNext = 0;
     let yellTimer = 0;
@@ -200,7 +212,8 @@
         muteBtn: document.getElementById('mute-btn'),
         rfpValue: document.getElementById('rfp-value'),
         demandYell: document.getElementById('demand-yell'),
-        rfpBtn: document.getElementById('rfp-btn')
+        rfpBtn: document.getElementById('rfp-btn'),
+        upgradeScreen: document.getElementById('upgrade-screen')
     };
 
     let audioCtx;
@@ -596,6 +609,24 @@
         scene.add(point2);
     }
 
+    function officeLayout() {
+        // Collision sizes stay on the old cover grid. Visuals must not grow these boxes.
+        return [
+            { x: -10, y: 1, z: -10, size: [2, 2, 2], kind: 'desk', zone: 'reception' },
+            { x: 10, y: 1, z: -10, size: [2, 2, 2], kind: 'desk', zone: 'reception' },
+            { x: -10, y: 1, z: 10, size: [2, 2, 2], kind: 'desk', zone: 'conference' },
+            { x: 10, y: 1, z: 10, size: [2, 2, 2], kind: 'desk', zone: 'conference' },
+            { x: -20, y: 1.5, z: 0, size: [4, 3, 1], kind: 'partition', zone: 'cubicles' },
+            { x: 20, y: 1.5, z: 0, size: [4, 3, 1], kind: 'cabinet', zone: 'filing' },
+            { x: 0, y: 1.5, z: -20, size: [1, 3, 4], kind: 'counter', zone: 'reception' },
+            { x: 0, y: 1.5, z: 20, size: [1, 3, 4], kind: 'table', zone: 'conference' },
+            { x: -25, y: 3, z: -25, size: [2, 6, 2], kind: 'pillar', zone: 'cubicles' },
+            { x: 25, y: 3, z: -25, size: [2, 6, 2], kind: 'pillar', zone: 'reception' },
+            { x: -25, y: 3, z: 25, size: [2, 6, 2], kind: 'pillar', zone: 'conference' },
+            { x: 25, y: 3, z: 25, size: [2, 6, 2], kind: 'pillar', zone: 'filing' }
+        ];
+    }
+
     function createArena() {
         const group = new THREE.Group();
         const walls = [];
@@ -631,26 +662,64 @@
             walls.push(mesh);
         });
 
-        const obstacleMat = new THREE.MeshStandardMaterial({
-            color: 0x4a4a6e, roughness: 0.6, metalness: 0.4
+        const zoneColor = {
+            reception: 0x8a5a32,
+            filing: 0x3d6b4f,
+            conference: 0x3d5278,
+            cubicles: 0x8a6232
+        };
+        const phone = document.documentElement.classList.contains('touch-ui');
+        [{ x: 0, z: -30, w: 16, d: 8, color: 0x6a4328 },
+         { x: 30, z: 0, w: 8, d: 16, color: 0x24543a },
+         { x: 0, z: 30, w: 16, d: 8, color: 0x243e66 },
+         { x: -30, z: 0, w: 8, d: 16, color: 0x6a4a28 }].forEach(rug => {
+            const mat = new THREE.MeshStandardMaterial({ color: rug.color, roughness: 0.95 });
+            const mesh = new THREE.Mesh(new THREE.PlaneGeometry(rug.w, rug.d), mat);
+            mesh.rotation.x = -Math.PI / 2;
+            mesh.position.set(rug.x, 0.02, rug.z);
+            mesh.receiveShadow = !phone;
+            group.add(mesh);
         });
 
-        [[-10, 1, -10, [2, 2, 2]], [10, 1, -10, [2, 2, 2]],
-         [-10, 1, 10, [2, 2, 2]], [10, 1, 10, [2, 2, 2]],
-         [-20, 1.5, 0, [4, 3, 1]], [20, 1.5, 0, [4, 3, 1]],
-         [0, 1.5, -20, [1, 3, 4]], [0, 1.5, 20, [1, 3, 4]],
-         [-25, 3, -25, [2, 6, 2]], [25, 3, -25, [2, 6, 2]],
-         [-25, 3, 25, [2, 6, 2]], [25, 3, 25, [2, 6, 2]]].forEach(config => {
-            const mesh = new THREE.Mesh(new THREE.BoxGeometry(...config[3]), obstacleMat);
-            mesh.position.set(config[0], config[1], config[2]);
-            mesh.castShadow = !document.documentElement.classList.contains('touch-ui');
-            mesh.receiveShadow = !document.documentElement.classList.contains('touch-ui');
+        officeLayout().forEach(prop => {
+            const mat = new THREE.MeshStandardMaterial({
+                color: zoneColor[prop.zone], roughness: 0.62, metalness: 0.18
+            });
+            const mesh = new THREE.Mesh(new THREE.BoxGeometry(...prop.size), mat);
+            mesh.position.set(prop.x, prop.y, prop.z);
+            mesh.castShadow = !phone;
+            mesh.receiveShadow = !phone;
+            dressOfficeProp(mesh, prop);
             group.add(mesh);
             walls.push(mesh);
         });
 
         scene.add(group);
         return { group, walls };
+    }
+
+    function dressOfficeProp(mesh, prop) {
+        const [w, h, d] = prop.size;
+        const trim = new THREE.MeshStandardMaterial({
+            color: prop.kind === 'pillar' ? 0xf2d48a : 0xd8d2c4,
+            roughness: 0.45,
+            metalness: 0.05
+        });
+        const screen = new THREE.MeshBasicMaterial({ color: 0x17344a });
+        const add = (sx, sy, sz, x, y, z, material) => {
+            const part = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), material);
+            part.position.set(x, y, z);
+            mesh.add(part);
+        };
+        // Keep every added part inside the collision box so cover and paths do not change.
+        if (prop.kind === 'desk' || prop.kind === 'counter' || prop.kind === 'table') {
+            add(w * 0.72, 0.08, d * 0.55, 0, h * 0.42, 0, trim);
+            add(w * 0.28, h * 0.22, 0.06, 0, h * 0.28, d * 0.18, screen);
+        } else if (prop.kind === 'cabinet' || prop.kind === 'partition') {
+            [-0.28, 0, 0.28].forEach(y => add(w * 0.86, 0.04, d * 0.92, 0, y * h, d * 0.04, trim));
+        } else if (prop.kind === 'pillar') {
+            add(w * 0.72, 0.16, d * 0.72, 0, h * 0.42, 0, trim);
+        }
     }
 
     function cacheWallBoxes() {
@@ -954,7 +1023,7 @@
         }
 
         const waveBonus = Math.max(0, PLAYER.wave - 1);
-        health = Math.round(health * (1 + waveBonus * 0.08));
+        health = Math.round(health * (1 + waveBonus * 0.08) * upgradeThreat());
         speed *= Math.min(1.8, 1 + waveBonus * 0.045);
         damage = Math.round(damage * (1 + waveBonus * 0.06));
         scoreValue += waveBonus * 10;
@@ -986,6 +1055,13 @@
             coverLock: 0
         };
 
+        if (type === 'bomber') {
+            const warning = makeRadiusRing(BOMBER_RADIUS, 0xff5533);
+            warning.visible = false;
+            enemy.add(warning);
+            enemy.userData.warning = warning;
+            enemy.userData.fuse = null;
+        }
         scene.add(enemy);
         enemies.push(enemy);
         waveConfig.enemiesAlive++;
@@ -1030,13 +1106,11 @@
             }
 
             if (data.type === 'bomber') {
-                stepToward(enemy, px, pz, step);
-                const pulse = 1 + Math.sin(now / 110) * 0.12;
-                if (data.briefcase) data.briefcase.scale.setScalar(data.caseScale * pulse);
-                if (dist < 1.55) {
+                if (updateBomberWarning(enemy, dist, delta)) {
                     killEnemy(i);
                     continue;
                 }
+                if (data.fuse === null) stepToward(enemy, px, pz, step);
             } else if (now < data.coverUntil && (data.coverX || data.coverZ)) {
                 stepToward(enemy, data.coverX, data.coverZ, step);
                 const atCover = Math.hypot(data.coverX - enemy.position.x, data.coverZ - enemy.position.z) < 0.9;
@@ -1084,7 +1158,7 @@
             } else if (data.type !== 'bomber' && dist < 1.8) {
                 data.attackCooldown -= delta * 1000;
                 if (data.attackCooldown <= 0) {
-                    damagePlayer(data.damage);
+                    damagePlayer(data.damage, enemy.position);
                     data.attackCooldown = data.attackRate;
                     playSound('hit');
                 }
@@ -1128,7 +1202,7 @@
     }
 
     function shoot() {
-        if (gameState !== STATE.PLAYING) return;
+        if (gameState !== STATE.PLAYING || upgradeOpen) return;
         if (WEAPON.reloading) return;
         if (WEAPON.ammo <= 0) {
             playSound('empty');
@@ -1408,7 +1482,7 @@
     }
 
     function throwRfp() {
-        if (gameState !== STATE.PLAYING) return;
+        if (gameState !== STATE.PLAYING || upgradeOpen) return;
         if (rfpHeld <= 0) {
             playSound('empty');
             return;
@@ -1445,8 +1519,10 @@
     }
 
     function explodeRfp(position) {
-        const radius = 5.4;
-        const maxDamage = 58;
+        const radius = rfpRadius;
+        showBlastRing(position, radius, 0xffdb55);
+        showBlastRing(position, RFP_SELF_RADIUS, 0xff5533);
+        const maxDamage = rfpDamage;
         playSound('boom');
         createParticles(position, 0xf3e27a, 18);
         createParticles(position, 0xfff7df, 10);
@@ -1467,8 +1543,8 @@
         }
         for (let i = doomed.length - 1; i >= 0; i--) killEnemy(doomed[i]);
         const self = Math.hypot(camera.position.x - position.x, camera.position.z - position.z);
-        if (self < 2.8) {
-            damagePlayer(Math.max(6, Math.round(22 * (1 - self / 3))));
+        if (self < RFP_SELF_RADIUS) {
+            damagePlayer(Math.max(6, Math.round(22 * (1 - self / 3))), position);
         }
         updateHUD();
     }
@@ -1542,7 +1618,8 @@
                 (Math.random() - 0.5) * 9
             ),
             life: 3.1,
-            damage: data.damage
+            damage: data.damage,
+            origin: enemy.position.clone()
         };
         scene.add(shot);
         enemyShots.push(shot);
@@ -1580,7 +1657,7 @@
             const hit = Number.isFinite(contact);
             if (hit) {
                 moveToContact(shot.position, prevX, prevY, prevZ, contact);
-                if (playerTime < worldTime) damagePlayer(data.damage);
+                if (playerTime < worldTime) damagePlayer(data.damage, data.origin || shot.position);
                 createParticles(shot.position, 0xf4efe4, playerTime < worldTime ? 5 : 3);
             }
 
@@ -1596,8 +1673,8 @@
         createParticles(position.clone().setY(0.8), 0xff7722, 8);
         playSound('boom');
         const dist = Math.hypot(camera.position.x - position.x, camera.position.z - position.z);
-        if (dist < 3.2) {
-            damagePlayer(Math.max(6, Math.round(damage * (1 - dist / 3.4))));
+        if (dist < BOMBER_RADIUS) {
+            damagePlayer(Math.max(6, Math.round(damage * (1 - dist / 3.4))), position);
         }
     }
 
@@ -1642,11 +1719,89 @@
         announceWave(PLAYER.wave);
         spawnRfpPickup();
         playSound('wave');
+        if (offerUpgrade()) waveConfig.waveDelay = 1e9;
         updateHUD();
     }
 
+    function upgradeThreat() {
+        const ranks = upgradeRanks.magazine + upgradeRanks.reload + upgradeRanks.blast;
+        return 1 + ranks * 0.06;
+    }
+
+    function applyUpgrade(id) {
+        if (!Object.prototype.hasOwnProperty.call(UPGRADE_CAPS, id)) return false;
+        if (upgradeRanks[id] >= UPGRADE_CAPS[id]) return false;
+        upgradeRanks[id]++;
+        if (id === 'magazine') {
+            WEAPON.maxAmmo = UPGRADE_BASE.maxAmmo + upgradeRanks.magazine * 6;
+            WEAPON.ammo = Math.min(WEAPON.maxAmmo, WEAPON.ammo + 6);
+        } else if (id === 'reload') {
+            WEAPON.reloadTime = UPGRADE_BASE.reloadTime - upgradeRanks.reload * 200;
+        } else {
+            rfpRadius = Math.min(6.8, UPGRADE_BASE.radius + upgradeRanks.blast * 0.35);
+            rfpDamage = Math.min(90, UPGRADE_BASE.damage + upgradeRanks.blast * 8);
+        }
+        return true;
+    }
+
+    function resetUpgrades() {
+        upgradeRanks = { magazine: 0, reload: 0, blast: 0 };
+        upgradeOpen = false;
+        WEAPON.maxAmmo = UPGRADE_BASE.maxAmmo;
+        WEAPON.reloadTime = UPGRADE_BASE.reloadTime;
+        rfpRadius = UPGRADE_BASE.radius;
+        rfpDamage = UPGRADE_BASE.damage;
+        if (dom.upgradeScreen) dom.upgradeScreen.style.display = 'none';
+    }
+
+    function upgradeText(id) {
+        const rank = upgradeRanks[id];
+        const maxed = rank >= UPGRADE_CAPS[id];
+        if (id === 'magazine') {
+            const now = UPGRADE_BASE.maxAmmo + rank * 6;
+            return maxed ? `Magazine ${now} (max)` : `Magazine ${now} → ${now + 6}`;
+        }
+        if (id === 'reload') {
+            const now = UPGRADE_BASE.reloadTime - rank * 200;
+            return maxed ? `Reload ${(now / 1000).toFixed(1)}s (max)` : `Reload ${(now / 1000).toFixed(1)}s → ${((now - 200) / 1000).toFixed(1)}s`;
+        }
+        const damage = Math.min(90, UPGRADE_BASE.damage + rank * 8);
+        return maxed ? `Blast ${damage} (max)` : `Blast ${damage} → ${damage + 8}`;
+    }
+
+    function renderUpgradeChoices() {
+        if (!dom.upgradeScreen) return;
+        dom.upgradeScreen.querySelectorAll('[data-upgrade]').forEach(button => {
+            const id = button.dataset.upgrade;
+            const maxed = upgradeRanks[id] >= UPGRADE_CAPS[id];
+            button.disabled = maxed;
+            const detail = button.querySelector('small');
+            if (detail) detail.textContent = upgradeText(id);
+        });
+    }
+
+    function offerUpgrade() {
+        const open = Object.keys(UPGRADE_CAPS).some(id => upgradeRanks[id] < UPGRADE_CAPS[id]);
+        if (!open) return false;
+        upgradeOpen = true;
+        resetInput();
+        if (typeof controls !== 'undefined' && controls && controls.isLocked) controls.unlock();
+        renderUpgradeChoices();
+        if (dom.upgradeScreen) dom.upgradeScreen.style.display = 'flex';
+        return true;
+    }
+
+    function chooseUpgrade(id) {
+        if (!upgradeOpen || !applyUpgrade(id)) return false;
+        upgradeOpen = false;
+        if (dom.upgradeScreen) dom.upgradeScreen.style.display = 'none';
+        waveConfig.waveDelay = 400;
+        updateHUD();
+        return true;
+    }
+
     function updateWaveSystem(delta) {
-        if (gameState !== STATE.PLAYING) return;
+        if (gameState !== STATE.PLAYING || upgradeOpen) return;
         if (waveConfig.waveComplete) {
             waveConfig.waveDelay -= delta * 1000;
             if (waveConfig.waveDelay <= 0) {
@@ -1666,8 +1821,73 @@
         }
     }
 
-    function damagePlayer(amount) {
+    function makeRadiusRing(radius, color) {
+        const ring = new THREE.Mesh(
+            new THREE.RingGeometry(radius - 0.09, radius, 64),
+            new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8,
+                side: THREE.DoubleSide, depthWrite: false }));
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.y = 0.045;
+        return ring;
+    }
+
+    function showBlastRing(position, radius, color) {
+        const ring = makeRadiusRing(radius, color);
+        ring.position.set(position.x, 0.045, position.z);
+        ring.userData.life = 0.65;
+        scene.add(ring);
+        blastRings.push(ring);
+        if (blastRings.length > 24) {
+            const old = blastRings.shift();
+            scene.remove(old);
+            disposeObject(old);
+        }
+    }
+
+    function updateBomberWarning(enemy, distance, delta) {
+        const data = enemy.userData;
+        // Once triggered the bomber stops; the visible fuse gives time to escape.
+        if (data.fuse === null && distance < 3.8) data.fuse = 0.9;
+        if (data.fuse === null) return false;
+        data.fuse = Math.max(0, data.fuse - delta);
+        data.warning.visible = true;
+        const pulse = 0.5 + 0.5 * Math.sin((0.9 - data.fuse) * 35);
+        data.warning.material.opacity = 0.4 + pulse * 0.5;
+        if (data.briefcase) data.briefcase.scale.setScalar(data.caseScale * (1.1 + pulse * 0.22));
+        return data.fuse === 0;
+    }
+
+    function damageBearing(origin, player, yaw) {
+        const dx = origin.x - player.x;
+        const dz = origin.z - player.z;
+        return Math.atan2(dx * Math.cos(yaw) - dz * Math.sin(yaw),
+            -dx * Math.sin(yaw) - dz * Math.cos(yaw));
+    }
+
+    function updateCombatFeedback(delta) {
+        for (let i = blastRings.length - 1; i >= 0; i--) {
+            const ring = blastRings[i];
+            ring.userData.life -= delta;
+            ring.material.opacity = Math.max(0, ring.userData.life / 0.65) * 0.8;
+            if (ring.userData.life <= 0) {
+                scene.remove(ring);
+                disposeObject(ring);
+                blastRings.splice(i, 1);
+            }
+        }
+        const indicator = document.getElementById('damage-direction');
+        if (!indicator) return;
+        if (damageCue) damageCue.life -= delta;
+        indicator.style.display = damageCue && damageCue.life > 0 ? 'block' : 'none';
+        if (!damageCue || damageCue.life <= 0) { damageCue = null; return; }
+        const bearing = damageBearing(damageCue, camera.position, camera.rotation.y);
+        indicator.style.transform = `translate(-50%, -50%) rotate(${bearing}rad)`;
+        indicator.style.opacity = Math.min(1, damageCue.life * 2);
+    }
+
+    function damagePlayer(amount, origin) {
         if (gameState !== STATE.PLAYING) return;
+        if (origin) damageCue = { x: origin.x, z: origin.z, life: 1.2 };
         PLAYER.health = Math.max(0, PLAYER.health - amount);
         dom.damageFlash.classList.add('show');
         setTimeout(() => dom.damageFlash.classList.remove('show'), 140);
@@ -1741,6 +1961,14 @@
             dom.reloadBtn.addEventListener('pointerup', tapReload);
             dom.reloadBtn.addEventListener('touchstart', event => event.preventDefault(), { passive: false });
         }
+        if (dom.upgradeScreen) {
+            dom.upgradeScreen.addEventListener('pointerup', event => {
+                const button = event.target.closest('[data-upgrade]');
+                if (!button || button.disabled) return;
+                event.preventDefault();
+                chooseUpgrade(button.dataset.upgrade);
+            });
+        }
         if (dom.rfpBtn) {
             const tapRfp = event => {
                 event.preventDefault();
@@ -1754,6 +1982,14 @@
     }
 
     function onKeyDown(event) {
+        if (upgradeOpen) {
+            const pick = { Digit1: 'magazine', Digit2: 'reload', Digit3: 'blast', Numpad1: 'magazine', Numpad2: 'reload', Numpad3: 'blast' };
+            if (pick[event.code]) {
+                event.preventDefault();
+                if (!event.repeat) chooseUpgrade(pick[event.code]);
+            }
+            return;
+        }
         if (gameState === STATE.PLAYING) keys[event.code] = true;
         if (event.repeat) return;
         if (event.code === 'KeyR' && gameState === STATE.PLAYING) reload();
@@ -1769,6 +2005,7 @@
     }
 
     function onMouseDown(event) {
+        if (upgradeOpen) return;
         if (event.button === 2) {
             event.preventDefault();
             throwRfp();
@@ -1917,6 +2154,11 @@
     }
 
     function clearActors() {
+        blastRings.forEach(ring => { scene.remove(ring); disposeObject(ring); });
+        blastRings = [];
+        damageCue = null;
+        const indicator = document.getElementById('damage-direction');
+        if (indicator) indicator.style.display = 'none';
         enemies.forEach(enemy => {
             scene.remove(enemy);
             disposeObject(enemy);
@@ -1947,6 +2189,7 @@
         PLAYER.health = PLAYER.maxHealth;
         PLAYER.score = 0;
         PLAYER.wave = 1;
+        resetUpgrades();
         WEAPON.ammo = WEAPON.maxAmmo;
         WEAPON.reloading = false;
         WEAPON.currentRecoil = 0;
@@ -2020,6 +2263,8 @@
         if (controls.isLocked) controls.unlock();
         sprintHeld = false;
         if (dom.pauseScreen) dom.pauseScreen.style.display = 'none';
+        upgradeOpen = false;
+        if (dom.upgradeScreen) dom.upgradeScreen.style.display = 'none';
         dom.finalScore.textContent = `Score ${PLAYER.score}  ·  Wave ${PLAYER.wave}`;
         if (dom.finalBest) {
             dom.finalBest.textContent = newBestThisRun
@@ -2179,7 +2424,7 @@
     function animate() {
         requestAnimationFrame(animate);
         const delta = Math.min(clock.getDelta(), 0.05);
-        if (gameState === STATE.PLAYING) {
+        if (gameState === STATE.PLAYING && !upgradeOpen) {
             updateReload(delta);
             updatePlayerMovement(delta);
             updateEnemies(delta);
@@ -2187,6 +2432,7 @@
             if (gameState === STATE.PLAYING) updateEnemyShots(delta);
             if (gameState === STATE.PLAYING) updateRfp(delta);
             updateParticles(delta);
+            updateCombatFeedback(delta);
             updateWaveSystem(delta);
         }
         renderer.render(scene, camera);

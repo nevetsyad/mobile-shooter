@@ -18,19 +18,24 @@
 - Acceptance: focus changes cannot stick inputs; pause freezes reload; lethal final kills remain game over; every wave adds one pickup; small stick movement is slower.
 
 ## Phase 3 — Combat readability
-- Add directional damage feedback, clearer bomber wind-up, and a visible RFP blast boundary.
-- Keep effects readable on phone and avoid obscuring aim.
+- [x] Add directional damage feedback, a 0.9-second stationary bomber wind-up with a radius warning, and visible RFP blast/self-damage boundaries.
+- [x] Use a compact pointer-events-free direction marker and thin world-space rings to keep aim/touch controls clear.
+- [ ] Verify combat readability on desktop and physical phone.
 - Acceptance: players can identify attack direction and danger range without relying on sound.
 
 ## Phase 4 — Between-wave progression
-- Offer three upgrade choices: magazine capacity, reload speed, RFP blast strength.
-- Pause combat while choosing; support mouse and touch; reset upgrades on restart.
-- Define caps and escalating enemy balance before tuning.
+- [x] Offer three upgrade choices: magazine capacity, reload speed, RFP blast strength.
+- [x] Pause combat while choosing; support mouse, keyboard, and touch; reset upgrades on restart.
+- [x] Caps before tuning: magazine 54, reload 0.7s, blast damage 90 / radius 6.8. Each taken rank adds 6% enemy health.
+- [x] A maxed choice cannot be selected again. If every choice is maxed, the next wave starts without a picker.
+- [ ] Verify the picker on desktop and phone.
 - Acceptance: each choice changes the advertised stat, applies once, and never blocks wave progression.
 
 ## Phase 5 — Arena readability
-- Add recognizable office furniture and distinct office zones using existing Three.js geometry/materials.
-- Keep navigation, sight lines, collision boxes, and spawn accessibility aligned with visuals.
+- [x] Dress the existing cover grid as desks, a counter, a conference table, cabinets, partitions, and banded pillars.
+- [x] Mark reception, filing, conference, and cubicles with floor rugs. Rugs are visual only.
+- [x] Keep furniture details inside the old collision boxes so cover, paths, and spawns stay aligned.
+- [ ] Verify the landmarks read clearly on desktop and phone.
 - Acceptance: landmarks aid orientation and no new props trap players or enemies.
 
 ## Phase 6 — Performance polish
@@ -45,3 +50,19 @@ Implement and validate each phase separately. Keep publication separate from loc
 ## Validation — 2026-09-26
 - Phase 1 + 2: all 11 automated regression tests pass; JavaScript syntax and diff checks pass.
 - Local browser smoke test blocked by browser navigation policy; desktop and physical-phone playtesting remain outstanding.
+
+## Phase 3 validation — 2026-09-26
+- All 14 automated regressions pass, including damage bearing, bomber fuse timing, and transient-effect disposal. Syntax and diff checks pass.
+- Implemented locally; not published. Visual/playtest acceptance remains outstanding; the previous local browser attempt was blocked by navigation policy.
+- No dependency added: existing Three.js rings/materials and CSS suffice.
+
+## Phase 4 validation — 2026-09-26
+- Upgrade picker pauses combat, applies one choice, resets on restart, and skips itself when every choice is maxed.
+- Caps: magazine 54, reload 0.7s, blast damage 90 and radius 6.8. Each rank adds 6% enemy health.
+- Automated regressions pass after the collision fixture learned the new upgrade gate. Syntax and diff checks pass.
+- Implemented locally; not published. Desktop and phone picker playtest remains outstanding.
+
+## Phase 5 validation — 2026-09-26
+- Furniture uses the previous 12-prop cover grid. Rugs are not collision objects.
+- Layout test checks a clear spawn, a 1.6 walk gap, and all four office zones. Full suite: 21 passing.
+- Implemented locally; not published. Visual read on desktop and phone remains outstanding.

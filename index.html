@@ -427,8 +427,54 @@
         #wave-announce.show {
             opacity: 1;
         }
+        #upgrade-screen {
+            position: absolute;
+            inset: 0;
+            z-index: 45;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            background: rgba(0,0,0,0.78);
+            padding: 24px;
+            text-align: center;
+        }
+        #upgrade-screen h2 { margin: 0; font-size: 28px; }
+        #upgrade-screen p { margin: 0 0 8px; color: #ddd; }
+        #upgrade-screen button {
+            width: min(420px, 92vw);
+            min-height: 64px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.25);
+            background: rgba(255,255,255,0.08);
+            color: #fff;
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        #upgrade-screen button small {
+            display: block;
+            font-weight: 500;
+            color: #ffcc66;
+            margin-top: 4px;
+        }
+        #upgrade-screen button:disabled { opacity: 0.4; cursor: default; }
 
         /* Damage flash */
+        /* Small rotating marker leaves the center and touch controls unobscured. */
+        #damage-direction {
+            position: absolute; left: 50%; top: 50%;
+            width: 150px; height: 150px; pointer-events: none;
+            display: none; z-index: 15;
+        }
+        #damage-direction::before {
+            content: ''; position: absolute; top: 0; left: calc(50% - 10px);
+            border-left: 10px solid transparent; border-right: 10px solid transparent;
+            border-bottom: 16px solid #ff5533;
+            filter: drop-shadow(0 0 3px #000);
+        }
+        body:not(.playing) #damage-direction { visibility: hidden; }
         #damage-flash {
             position: absolute;
             inset: 0;
@@ -555,9 +601,11 @@
         <p>
             WASD to move • Shift to sprint • Mouse to look<br>
             Hold to fire the staple gun • R to reload staples • Esc to pause<br>
+            Red rings warn of bomber blasts. Gold rings show RFP reach; red shows self-damage range.<br>
             Right click throws a Request for Production. One extra is on the map each wave.<br>
             Phone: stick to move, RELOAD on the left, RFP on the right<br>
-            Lawyers with briefcases • Cyan ones throw discovery • Green cases explode
+            Lawyers with briefcases • Cyan ones throw discovery • Green cases explode<br>
+            Rugs mark reception, filing, conference, and cubicles
         </p>
         <p id="menu-best"></p>
         <button id="start-btn">PLAY</button>
@@ -578,11 +626,19 @@
     </div>
 
     <!-- Wave announcement -->
+    <div id="upgrade-screen">
+        <h2>PICK AN UPGRADE</h2>
+        <p>Combat is paused. Tap a choice, or press 1, 2, or 3.</p>
+        <button type="button" data-upgrade="magazine">Bigger magazine<small></small></button>
+        <button type="button" data-upgrade="reload">Faster reload<small></small></button>
+        <button type="button" data-upgrade="blast">Stronger filing<small></small></button>
+    </div>
     <div id="wave-announce"></div>
     <div id="demand-yell">I DEMAND ALL DOCUMENTS!!!</div>
 
     <!-- Damage flash -->
     <div id="damage-flash"></div>
+    <div id="damage-direction" aria-hidden="true"></div>
 
     <!-- Reload indicator -->
     <div id="reload-indicator">LOADING STAPLES...</div>
@@ -590,6 +646,6 @@
     </div>
     <!-- Three.js -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-    <script src="game.js?v=15"></script>
+    <script src="game.js?v=18"></script>
 </body>
 </html>
