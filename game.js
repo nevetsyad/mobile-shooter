@@ -176,7 +176,7 @@
         pauseBtn: document.getElementById('pause-btn'),
         resumeBtn: document.getElementById('resume-btn'),
         pauseScreen: document.getElementById('pause-screen'),
-        sprintBtn: document.getElementById('sprint-btn'),
+        reloadBtn: document.getElementById('reload-btn'),
         staminaBar: document.getElementById('stamina-bar'),
         touchControls: document.getElementById('touch-controls'),
         joystickZone: document.getElementById('joystick-zone'),
@@ -1459,26 +1459,18 @@
         if (dom.muteBtn) dom.muteBtn.addEventListener('click', toggleMusic);
         if (dom.pauseBtn) dom.pauseBtn.addEventListener('click', togglePause);
         if (dom.resumeBtn) dom.resumeBtn.addEventListener('click', togglePause);
-        if (dom.sprintBtn) {
-            const startSprint = event => {
+        if (dom.reloadBtn) {
+            let lastReloadTap = 0;
+            const tapReload = event => {
                 event.preventDefault();
-                sprintHeld = true;
-                dom.sprintBtn.classList.add('held');
+                if (gameState !== STATE.PLAYING) return;
+                const now = performance.now();
+                if (now - lastReloadTap < 350) return;
+                lastReloadTap = now;
+                reload();
             };
-            const endSprint = event => {
-                event.preventDefault();
-                sprintHeld = false;
-                dom.sprintBtn.classList.remove('held');
-            };
-            dom.sprintBtn.addEventListener('touchstart', startSprint, { passive: false });
-            dom.sprintBtn.addEventListener('touchend', endSprint, { passive: false });
-            dom.sprintBtn.addEventListener('touchcancel', endSprint, { passive: false });
-            dom.sprintBtn.addEventListener('mousedown', startSprint);
-            window.addEventListener('mouseup', () => {
-                if (!sprintHeld) return;
-                sprintHeld = false;
-                if (dom.sprintBtn) dom.sprintBtn.classList.remove('held');
-            });
+            dom.reloadBtn.addEventListener('pointerup', tapReload);
+            dom.reloadBtn.addEventListener('touchstart', event => event.preventDefault(), { passive: false });
         }
         setupTouchControls();
 
@@ -1664,7 +1656,6 @@
         STAMINA.current = STAMINA.max;
         STAMINA.regenDelay = 0;
         if (dom.pauseScreen) dom.pauseScreen.style.display = 'none';
-        if (dom.sprintBtn) dom.sprintBtn.classList.remove('held');
         dom.reloadIndicator.classList.remove('show');
 
         clearActors();
@@ -1695,7 +1686,6 @@
             mouseDown = false;
             touchFirePressed = false;
             sprintHeld = false;
-            if (dom.sprintBtn) dom.sprintBtn.classList.remove('held');
             if (controls.isLocked) controls.unlock();
             if (dom.pauseScreen) dom.pauseScreen.style.display = 'flex';
             return;

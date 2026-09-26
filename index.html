@@ -306,7 +306,7 @@
             background: #7ec8ff;
             border-radius: 2px;
         }
-        #pause-btn, #sprint-btn {
+        #pause-btn, #reload-btn {
             position: absolute;
             z-index: 40;
             pointer-events: auto;
@@ -328,17 +328,17 @@
             display: none;
         }
         body.playing #pause-btn { display: block; }
-        #sprint-btn {
-            left: 24px;
+        #reload-btn {
+            left: 18px;
             bottom: calc(172px + env(safe-area-inset-bottom));
-            width: 64px; height: 64px;
-            border-radius: 50%;
+            width: 76px; height: 64px;
+            border-radius: 32px;
             display: none;
             align-items: center;
             justify-content: center;
+            font-size: 11px;
         }
-        html.touch-ui body.playing #sprint-btn { display: flex; }
-        #sprint-btn.held { background: rgba(126, 200, 255, 0.45); }
+        html.touch-ui body.playing #reload-btn { display: flex; }
         #pause-screen {
             position: absolute;
             inset: 0;
@@ -458,7 +458,7 @@
     <div id="game-container"></div>
     <button id="mute-btn" type="button">MUSIC ON</button>
     <button id="pause-btn" type="button">PAUSE</button>
-    <button id="sprint-btn" type="button">RUN</button>
+    <button id="reload-btn" type="button">RELOAD</button>
 
     <!-- HUD -->
     <div id="hud">
@@ -518,7 +518,7 @@
         <p>
             WASD to move • Shift to sprint • Mouse to look<br>
             Click to fire • R to reload • Esc to pause<br>
-            Phone: stick to move, RUN to sprint, drag the right side<br>
+            Phone: stick to move, RELOAD on the left, drag the right side<br>
             Lawyers with briefcases • Cyan ones throw discovery • Green cases explode
         </p>
         <p id="menu-best"></p>
@@ -551,6 +551,6 @@
     </div>
     <!-- Three.js -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-    <script src="game.js?v=9"></script>
+    <script src="game.js?v=10"></script>
 </body>
 </html>
