@@ -309,7 +309,7 @@
             background: #7ec8ff;
             border-radius: 2px;
         }
-        #pause-btn, #reload-btn {
+        #pause-btn, #reload-btn, #rfp-btn {
             position: absolute;
             z-index: 40;
             pointer-events: auto;
@@ -342,6 +342,35 @@
             font-size: 11px;
         }
         html.touch-ui body.playing #reload-btn { display: flex; }
+        #rfp-btn {
+            right: 18px;
+            bottom: calc(172px + env(safe-area-inset-bottom));
+            width: 76px; height: 64px;
+            border-radius: 32px;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+        }
+        html.touch-ui body.playing #rfp-btn { display: flex; }
+        #demand-yell {
+            position: absolute;
+            top: 28%;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #fff8e8;
+            font-size: clamp(18px, 4.5vw, 34px);
+            font-weight: 900;
+            letter-spacing: 0.4px;
+            text-align: center;
+            text-shadow: 0 2px 0 #7a1a12, 0 0 18px rgba(255, 80, 40, 0.85);
+            pointer-events: none;
+            z-index: 26;
+            opacity: 0;
+            max-width: 92vw;
+            transition: opacity 0.12s;
+        }
+        #demand-yell.show { opacity: 1; }
         #pause-screen {
             position: absolute;
             inset: 0;
@@ -462,6 +491,7 @@
     <button id="mute-btn" type="button">MUSIC ON</button>
     <button id="pause-btn" type="button">PAUSE</button>
     <button id="reload-btn" type="button">RELOAD</button>
+    <button id="rfp-btn" type="button">RFP</button>
 
     <!-- HUD -->
     <div id="hud">
@@ -494,6 +524,10 @@
                     <div id="ammo-bar"></div>
                 </div>
             </div>
+            <div class="hud-item">
+                <div class="label">Requests</div>
+                <div class="value" id="rfp-value">0</div>
+            </div>
         </div>
     </div>
 
@@ -520,8 +554,9 @@
         <h1>Sara Goes to Work</h1>
         <p>
             WASD to move • Shift to sprint • Mouse to look<br>
-            Hold to fire the staple gun • Right click or R to reload staples • Esc to pause<br>
-            Phone: stick to move, RELOAD on the left, drag the right side<br>
+            Hold to fire the staple gun • R to reload staples • Esc to pause<br>
+            Right click throws a Request for Production. One extra is on the map each wave.<br>
+            Phone: stick to move, RELOAD on the left, RFP on the right<br>
             Lawyers with briefcases • Cyan ones throw discovery • Green cases explode
         </p>
         <p id="menu-best"></p>
@@ -544,6 +579,7 @@
 
     <!-- Wave announcement -->
     <div id="wave-announce"></div>
+    <div id="demand-yell">I DEMAND ALL DOCUMENTS!!!</div>
 
     <!-- Damage flash -->
     <div id="damage-flash"></div>
@@ -554,6 +590,6 @@
     </div>
     <!-- Three.js -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-    <script src="game.js?v=12"></script>
+    <script src="game.js?v=13"></script>
 </body>
 </html>

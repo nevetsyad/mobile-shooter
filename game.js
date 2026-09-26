@@ -122,6 +122,11 @@
     let newBestThisRun = false;
     let reloadToken = 0;
     let enemyShots = [];
+    let rfpThrows = [];
+    let rfpPickups = [];
+    let rfpHeld = 0;
+    let rfpNext = 0;
+    let yellTimer = 0;
     let musicGain = null;
     let musicFilter = null;
     let hatBuffer = null;
@@ -189,7 +194,10 @@
         damageFlash: document.getElementById('damage-flash'),
         reloadIndicator: document.getElementById('reload-indicator'),
         finalScore: document.getElementById('final-score'),
-        muteBtn: document.getElementById('mute-btn')
+        muteBtn: document.getElementById('mute-btn'),
+        rfpValue: document.getElementById('rfp-value'),
+        demandYell: document.getElementById('demand-yell'),
+        rfpBtn: document.getElementById('rfp-btn')
     };
 
     let audioCtx;
@@ -257,6 +265,12 @@
         MAT.doc.userData.shared = true;
         MAT.docLine.userData.shared = true;
         MAT.docStamp.userData.shared = true;
+        MAT.rfp = new THREE.MeshStandardMaterial({
+            color: 0xf3e27a, roughness: 0.62, emissive: 0xaa7700, emissiveIntensity: 0.45
+        });
+        MAT.rfpStamp = new THREE.MeshBasicMaterial({ color: 0xb42318 });
+        MAT.rfp.userData.shared = true;
+        MAT.rfpStamp.userData.shared = true;
     }
 
     function initAudio() {
@@ -330,6 +344,15 @@
                 gain.gain.exponentialRampToValueAtTime(0.01, now + 0.22);
                 osc.start(now);
                 osc.stop(now + 0.22);
+                break;
+            case 'pickup':
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(520, now);
+                osc.frequency.setValueAtTime(780, now + 0.07);
+                gain.gain.setValueAtTime(0.14, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.16);
+                osc.start(now);
+                osc.stop(now + 0.16);
                 break;
             case 'wave':
                 osc.type = 'sine';
@@ -1305,6 +1328,197 @@
         return doc;
     }
 
+    function makeRfpPickup() {
+        const doc = new THREE.Group();
+        const page = new THREE.Mesh(GEO.doc, MAT.rfp);
+        doc.add(page);
+        [-0.06, 0, 0.06].forEach(z => {
+            const line = new THREE.Mesh(GEO.docLine, MAT.docLine);
+            line.position.set(0, 0.012, z);
+            doc.add(line);
+        });
+        const stamp = new THREE.Mesh(GEO.docStamp, MAT.rfpStamp);
+        stamp.position.set(-0.08, 0.014, -0.1);
+        doc.add(stamp);
+        const glow = new THREE.PointLight(0xffcc44, 1.6, 9);
+        glow.position.set(0, 0.35, 0);
+        doc.add(glow);
+        doc.scale.setScalar(2.2);
+        return doc;
+    }
+
+    function spawnRfpPickup() {
+        if (rfpPickups.length >= 6) return;
+        for (let n = 0; n < 18; n++) {
+            const x = (Math.random() * 2 - 1) * 28;
+            const z = (Math.random() * 2 - 1) * 28;
+            if (blocked(x, z)) continue;
+            if (Math.hypot(x - camera.position.x, z - camera.position.z) < 8) continue;
+            const doc = makeRfpPickup();
+            doc.position.set(x, 0.85, z);
+            doc.userData = { bob: Math.random() * Math.PI * 2 };
+            scene.add(doc);
+            rfpPickups.push(doc);
+            return;
+        }
+    }
+
+    function yellDemand() {
+        if (dom.demandYell) {
+            dom.demandYell.classList.add('show');
+            clearTimeout(yellTimer);
+            yellTimer = setTimeout(() => dom.demandYell.classList.remove('show'), 1400);
+        }
+        if (MUSIC.muted || !window.speechSynthesis) return;
+        const line = new SpeechSynthesisUtterance('I DEMAND ALL DOCUMENTS!!!');
+        line.rate = 1.12;
+        line.pitch = 1.35;
+        line.volume = 1;
+        const voices = speechSynthesis.getVoices();
+        const voice = voices.find(v => /samantha|karen|moira|fiona|victoria/i.test(v.name))
+            || voices.find(v => v.lang && v.lang.startsWith('en'));
+        if (voice) line.voice = voice;
+        speechSynthesis.cancel();
+        speechSynthesis.speak(line);
+    }
+
+    function throwRfp() {
+        if (gameState !== STATE.PLAYING) return;
+        if (rfpHeld <= 0) {
+            playSound('empty');
+            return;
+        }
+        const now = performance.now();
+        if (now < rfpNext) return;
+        rfpNext = now + 450;
+        rfpHeld--;
+        yellDemand();
+
+        const doc = makeDiscovery();
+        doc.scale.setScalar(1.55);
+        const direction = new THREE.Vector3();
+        camera.getWorldDirection(direction);
+        doc.position.copy(camera.position).addScaledVector(direction, 0.85);
+        doc.position.y -= 0.12;
+        const velocity = direction.clone().multiplyScalar(16);
+        velocity.y += 5.2;
+        doc.userData = {
+            velocity,
+            spin: new THREE.Vector3(5, 2.4, 7),
+            life: 1.45,
+            armed: 0.16
+        };
+        scene.add(doc);
+        rfpThrows.push(doc);
+        updateHUD();
+    }
+
+    function explodeRfp(position) {
+        const radius = 5.4;
+        const maxDamage = 58;
+        playSound('boom');
+        createParticles(position, 0xf3e27a, 18);
+        createParticles(position, 0xfff7df, 10);
+        const doomed = [];
+        for (let i = 0; i < enemies.length; i++) {
+            const enemy = enemies[i];
+            const dx = enemy.position.x - position.x;
+            const dz = enemy.position.z - position.z;
+            const dist = Math.hypot(dx, dz);
+            if (dist > radius) continue;
+            const falloff = 1 - dist / radius;
+            enemy.userData.health -= Math.max(10, Math.round(maxDamage * falloff));
+            enemy.userData.hitFlash = 0.22;
+            const push = (4.5 * falloff) / (dist || 1);
+            enemy.position.x += dx * push;
+            enemy.position.z += dz * push;
+            if (enemy.userData.health <= 0) doomed.push(i);
+        }
+        for (let i = doomed.length - 1; i >= 0; i--) killEnemy(doomed[i]);
+        const self = Math.hypot(camera.position.x - position.x, camera.position.z - position.z);
+        if (self < 2.8) {
+            damagePlayer(Math.max(6, Math.round(22 * (1 - self / 3))));
+        }
+        updateHUD();
+    }
+
+    function updateRfp(delta) {
+        for (let i = rfpPickups.length - 1; i >= 0; i--) {
+            const pickup = rfpPickups[i];
+            pickup.userData.bob += delta * 2.6;
+            pickup.position.y = 0.85 + Math.sin(pickup.userData.bob) * 0.16;
+            pickup.rotation.y += delta * 1.5;
+            if (Math.hypot(camera.position.x - pickup.position.x, camera.position.z - pickup.position.z) < 1.5) {
+                rfpHeld++;
+                scene.remove(pickup);
+                rfpPickups.splice(i, 1);
+                playSound('pickup');
+                updateHUD();
+            }
+        }
+
+        for (let i = rfpThrows.length - 1; i >= 0; i--) {
+            const shot = rfpThrows[i];
+            const data = shot.userData;
+            const prevX = shot.position.x;
+            const prevY = shot.position.y;
+            const prevZ = shot.position.z;
+            data.life -= delta;
+            data.armed = Math.max(0, data.armed - delta);
+            data.velocity.y -= 16 * delta;
+            shot.position.x += data.velocity.x * delta;
+            shot.position.y += data.velocity.y * delta;
+            shot.position.z += data.velocity.z * delta;
+            shot.rotation.x += data.spin.x * delta;
+            shot.rotation.y += data.spin.y * delta;
+            shot.rotation.z += data.spin.z * delta;
+
+            let explode = data.life <= 0;
+            if (!explode && data.armed <= 0) {
+                if (shot.position.y <= 0.16) explode = true;
+                if (!explode) {
+                    const stepX = shot.position.x - prevX;
+                    const stepY = shot.position.y - prevY;
+                    const stepZ = shot.position.z - prevZ;
+                    const travel = Math.hypot(stepX, stepY, stepZ);
+                    if (travel > 0.001) {
+                        ray.origin.set(prevX, prevY, prevZ);
+                        ray.direction.set(stepX / travel, stepY / travel, stepZ / travel);
+                        for (let k = 0; k < wallBoxes.length; k++) {
+                            if (wallBoxes[k].containsPoint(shot.position) ||
+                                (ray.intersectBox(wallBoxes[k], rayHit) &&
+                                 rayHit.distanceTo(ray.origin) <= travel + 0.08)) {
+                                explode = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (!explode) {
+                    for (let e = 0; e < enemies.length; e++) {
+                        const enemy = enemies[e];
+                        const radius = Math.max(enemy.userData.size[0], enemy.userData.size[2]) * 0.7 + 0.15;
+                        if (segmentHitsSphere(
+                            prevX, prevY, prevZ,
+                            shot.position.x, shot.position.y, shot.position.z,
+                            enemy.position.x, enemy.userData.size[1] * 0.5, enemy.position.z,
+                            radius
+                        )) {
+                            explode = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!explode) continue;
+            const pos = shot.position.clone();
+            if (pos.y < 0.3) pos.y = 0.45;
+            scene.remove(shot);
+            rfpThrows.splice(i, 1);
+            explodeRfp(pos);
+        }
+    }
+
     function fireEnemyShot(enemy) {
         const data = enemy.userData;
         const shot = makeDiscovery();
@@ -1434,6 +1648,7 @@
         PLAYER.health = Math.min(PLAYER.maxHealth, PLAYER.health + 12);
         rememberWave();
         announceWave(PLAYER.wave);
+        spawnRfpPickup();
         playSound('wave');
         updateHUD();
     }
@@ -1508,6 +1723,14 @@
             dom.reloadBtn.addEventListener('pointerup', tapReload);
             dom.reloadBtn.addEventListener('touchstart', event => event.preventDefault(), { passive: false });
         }
+        if (dom.rfpBtn) {
+            const tapRfp = event => {
+                event.preventDefault();
+                throwRfp();
+            };
+            dom.rfpBtn.addEventListener('pointerup', tapRfp);
+            dom.rfpBtn.addEventListener('touchstart', event => event.preventDefault(), { passive: false });
+        }
         setupTouchControls();
 
     }
@@ -1529,7 +1752,7 @@
     function onMouseDown(event) {
         if (event.button === 2) {
             event.preventDefault();
-            if (gameState === STATE.PLAYING) reload();
+            throwRfp();
             return;
         }
         if (event.button !== 0) return;
@@ -1676,10 +1899,14 @@
             particle.material.dispose();
         });
         enemyShots.forEach(shot => scene.remove(shot));
+        rfpThrows.forEach(shot => scene.remove(shot));
+        rfpPickups.forEach(pickup => scene.remove(pickup));
         enemies = [];
         bullets = [];
         particles = [];
         enemyShots = [];
+        rfpThrows = [];
+        rfpPickups = [];
     }
 
     function startGame() {
@@ -1718,6 +1945,9 @@
         camera.position.set(0, 1.7, 0);
         camera.rotation.set(0, 0, 0);
         camera.rotation.order = 'YXZ';
+        rfpHeld = 0;
+        rfpNext = 0;
+        spawnRfpPickup();
         createWeapon();
         onWindowResize();
         try { controls.lock(); } catch (err) {}
@@ -1810,6 +2040,7 @@
         dom.ammoBar.style.background = WEAPON.ammo <= 5
             ? 'linear-gradient(90deg, #ff0000, #ff4444)'
             : 'linear-gradient(90deg, #ffaa00, #ffcc44)';
+        if (dom.rfpValue) dom.rfpValue.textContent = String(rfpHeld);
         updateScoreLabels();
     }
 
@@ -1919,6 +2150,7 @@
             updateEnemies(delta);
             updateBullets(delta);
             updateEnemyShots(delta);
+            updateRfp(delta);
             updateParticles(delta);
             updateWaveSystem(delta);
         }
