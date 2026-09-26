@@ -50,8 +50,29 @@
         const view = window.visualViewport;
         return {
             width: Math.max(1, Math.round(view ? view.width : window.innerWidth)),
-            height: Math.max(1, Math.round(view ? view.height : window.innerHeight))
+            height: Math.max(1, Math.round(view ? view.height : window.innerHeight)),
+            top: Math.round(view ? view.offsetTop : 0),
+            left: Math.round(view ? view.offsetLeft : 0)
         };
+    }
+
+    function markTouchUI() {
+        const touch = window.matchMedia('(hover: none), (pointer: coarse)').matches
+            || navigator.maxTouchPoints > 0;
+        document.documentElement.classList.toggle('touch-ui', touch);
+    }
+
+    let weaponAnchor = { x: 0.16, y: -0.16, z: -0.62, scale: 1 };
+
+    function updateWeaponAnchor() {
+        const aspect = Math.max(0.45, camera && camera.aspect ? camera.aspect : 1);
+        weaponAnchor = {
+            x: Math.min(0.16, 0.12 * aspect + 0.04),
+            y: aspect < 1 ? -0.1 : -0.16,
+            z: -0.62,
+            scale: aspect < 0.7 ? 0.62 : aspect < 1 ? 0.78 : 1
+        };
+        if (weaponGroup) weaponGroup.scale.setScalar(weaponAnchor.scale);
     }
 
     const STATE = {
@@ -431,6 +452,7 @@
     }
 
     function init() {
+        markTouchUI();
         loadHighScore();
         initPools();
         clock = new THREE.Clock();
@@ -611,7 +633,9 @@
         weaponGroup.add(flash);
         muzzleFlashes.push(flash);
 
-        weaponGroup.position.set(0.25, -0.2, -0.5);
+        updateWeaponAnchor();
+        weaponGroup.position.set(weaponAnchor.x, weaponAnchor.y, weaponAnchor.z);
+        weaponGroup.scale.setScalar(weaponAnchor.scale);
         camera.add(weaponGroup);
     }
 
@@ -1171,10 +1195,7 @@
         dom.restartBtn.addEventListener('click', restartGame);
         if (dom.muteBtn) dom.muteBtn.addEventListener('click', toggleMusic);
         setupTouchControls();
-        window.addEventListener('resize', onWindowResize);
-        if (window.visualViewport) {
-            window.visualViewport.addEventListener('resize', onWindowResize);
-        }
+
     }
 
     function onKeyDown(event) {
@@ -1283,13 +1304,36 @@
         dom.fireBtn.addEventListener('touchcancel', endFire, { passive: false });
     }
 
-    function onWindowResize() {
+    function applyViewportBox() {
         const view = viewportSize();
+        const root = document.documentElement;
+        root.style.setProperty('--app-width', view.width + 'px');
+        root.style.setProperty('--app-height', view.height + 'px');
+        root.style.setProperty('--app-top', view.top + 'px');
+        root.style.setProperty('--app-left', view.left + 'px');
+        if (window.scrollX || window.scrollY) window.scrollTo(0, 0);
+        return view;
+    }
+
+    function onWindowResize() {
+        const view = applyViewportBox();
+        if (!camera || !renderer) return;
         camera.aspect = view.width / view.height;
         camera.updateProjectionMatrix();
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
         renderer.setSize(view.width, view.height, false);
-        renderer.domElement.style.width = '100%';
-        renderer.domElement.style.height = '100%';
+        renderer.domElement.style.width = view.width + 'px';
+        renderer.domElement.style.height = view.height + 'px';
+        updateWeaponAnchor();
+    }
+
+    markTouchUI();
+    applyViewportBox();
+    window.addEventListener('resize', onWindowResize);
+    window.addEventListener('orientationchange', onWindowResize);
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', onWindowResize);
+        window.visualViewport.addEventListener('scroll', onWindowResize);
     }
 
     function clearActors() {
@@ -1483,9 +1527,10 @@
         if (weaponGroup) {
             WEAPON.bobTime += delta * (WEAPON.bobMoving ? 9.5 : 1.4);
             const amp = WEAPON.bobMoving ? 1 : 0.25;
-            weaponGroup.position.x = 0.25 + Math.cos(WEAPON.bobTime * 0.5) * 0.012 * amp;
-            weaponGroup.position.y = -0.2 + Math.sin(WEAPON.bobTime) * 0.014 * amp;
-            weaponGroup.position.z = -0.5 + WEAPON.currentRecoil * 0.35;
+            weaponGroup.position.x = weaponAnchor.x + Math.cos(WEAPON.bobTime * 0.5) * 0.012 * amp;
+            weaponGroup.position.y = weaponAnchor.y + Math.sin(WEAPON.bobTime) * 0.014 * amp;
+            weaponGroup.position.z = weaponAnchor.z + WEAPON.currentRecoil * 0.35;
+            weaponGroup.scale.setScalar(weaponAnchor.scale);
             weaponGroup.rotation.x = -WEAPON.currentRecoil * 4.5;
         }
 
@@ -1517,7 +1562,7 @@
         const screen = document.getElementById('start-screen');
         if (screen) {
             const note = document.createElement('p');
-            note.textContent = 'Game failed to start. Refresh and try again.';
+            note.textContent = 'Game failed to start. ' + (err && err.message ? err.message : 'Refresh and try again.');
             screen.appendChild(note);
         }
     }

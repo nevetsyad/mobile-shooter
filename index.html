@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Sara Goes to Work</title>
@@ -11,24 +11,33 @@
         html, body {
             width: 100%;
             height: 100%;
-            height: 100dvh;
             overflow: hidden;
             background: #000;
             touch-action: none;
+            overscroll-behavior: none;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+        #app {
+            position: fixed;
+            top: var(--app-top, 0px);
+            left: var(--app-left, 0px);
+            width: var(--app-width, 100%);
+            height: var(--app-height, 100dvh);
+            overflow: hidden;
+            background: #000;
+            transform: translateZ(0);
         }
         #game-container {
             width: 100%;
             height: 100%;
-            height: 100dvh;
-            position: fixed; top: 0; left: 0;
+            position: absolute; top: 0; left: 0;
         }
         canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 
         /* HUD overlay */
         #hud {
-            position: fixed; top: 0; left: 0; right: 0;
-            padding: 12px 16px;
+            position: absolute; top: 0; left: 0; right: 0;
+            padding: max(12px, env(safe-area-inset-top)) 16px 8px;
             display: flex; justify-content: space-between; align-items: flex-start;
             pointer-events: none; z-index: 10;
         }
@@ -90,7 +99,7 @@
 
         /* Crosshair */
         #crosshair {
-            position: fixed;
+            position: absolute;
             top: 50%; left: 50%;
             transform: translate(-50%, -50%);
             pointer-events: none; z-index: 20;
@@ -119,9 +128,8 @@
 
         /* Mobile touch controls */
         #touch-controls {
-            position: fixed;
-            bottom: 0; left: 0; right: 0;
-            height: 100%;
+            position: absolute;
+            inset: 0;
             display: none;
             z-index: 15;
             pointer-events: none;
@@ -202,24 +210,30 @@
 
         /* Start screen */
         #start-screen {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
+            position: absolute;
+            inset: 0;
             background: rgba(0,0,0,0.92);
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
+            justify-content: safe center;
             z-index: 100;
             overflow-y: auto;
+            touch-action: pan-y;
+            -webkit-overflow-scrolling: touch;
             padding: calc(24px + env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom));
             backdrop-filter: blur(8px);
             -webkit-backdrop-filter: blur(8px);
         }
+        #start-screen h1, #start-screen p, #start-btn, #game-over h2, #final-score, #final-best {
+            max-width: 100%;
+        }
         #start-screen h1 {
             color: #fff;
-            font-size: clamp(28px, 8vw, 36px);
+            font-size: clamp(22px, 7vw, 36px);
             margin-bottom: 8px;
             text-align: center;
+            overflow-wrap: anywhere;
             text-shadow: 0 0 20px rgba(255,100,0,0.5);
         }
         #start-screen p {
@@ -228,6 +242,7 @@
             margin-bottom: 32px;
             text-align: center;
             line-height: 1.6;
+            overflow-wrap: anywhere;
         }
         #start-btn {
             background: linear-gradient(135deg, #ff6600, #ff3300);
@@ -248,8 +263,8 @@
 
         /* Game over screen */
         #game-over {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
+            position: absolute;
+            inset: 0;
             background: rgba(0,0,0,0.9);
             display: none;
             flex-direction: column;
@@ -280,8 +295,8 @@
             text-transform: uppercase;
         }
         #mute-btn {
-            position: fixed;
-            top: calc(12px + env(safe-area-inset-top));
+            position: absolute;
+            top: max(12px, env(safe-area-inset-top));
             left: 50%;
             transform: translateX(-50%);
             z-index: 40;
@@ -299,7 +314,7 @@
 
         /* Wave announcement */
         #wave-announce {
-            position: fixed;
+            position: absolute;
             top: 50%; left: 50%;
             transform: translate(-50%, -50%);
             color: #fff;
@@ -317,8 +332,8 @@
 
         /* Damage flash */
         #damage-flash {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
+            position: absolute;
+            inset: 0;
             background: rgba(255,0,0,0.3);
             pointer-events: none;
             z-index: 30;
@@ -331,7 +346,7 @@
 
         /* Reload indicator */
         #reload-indicator {
-            position: fixed;
+            position: absolute;
             bottom: 100px; left: 50%;
             transform: translateX(-50%);
             color: #ffaa00;
@@ -347,19 +362,33 @@
         }
 
         @media (max-width: 720px) {
-            #hud { padding: 8px; }
+            #hud { padding: max(8px, env(safe-area-inset-top)) 8px 6px; }
             .hud-item { padding: 4px 8px; }
             .hud-item .value { font-size: 16px; }
-            #health-bar-container, #ammo-bar-container { width: 108px; }
+            #health-bar-container, #ammo-bar-container { width: 96px; }
             #start-screen p { font-size: 13px; margin-bottom: 18px; }
         }
-        @media (hover: none) and (pointer: coarse) {
-            body.playing #touch-controls { display: block; }
-            #crosshair { display: none; }
+        @media (max-width: 380px) {
+            .touch-zone { width: 108px; height: 108px; }
+            #joystick-zone { left: 8px; }
+            #fire-zone { right: 8px; }
+            #joystick-base { width: 92px; height: 92px; }
+            #fire-btn { width: 64px; height: 64px; }
         }
+        @media (max-height: 480px) {
+            .touch-zone { width: 108px; height: 108px; }
+            #joystick-base { width: 92px; height: 92px; }
+            #fire-btn { width: 64px; height: 64px; }
+            #fire-btn::after { font-size: 22px; }
+            .hud-item .value { font-size: 14px; }
+            #start-screen p { margin-bottom: 10px; }
+        }
+        html.touch-ui body.playing #touch-controls { display: block; }
+        html.touch-ui #crosshair { display: none; }
     </style>
 </head>
 <body>
+    <div id="app">
     <div id="game-container"></div>
     <button id="mute-btn" type="button">MUSIC ON</button>
 
@@ -442,8 +471,9 @@
     <!-- Reload indicator -->
     <div id="reload-indicator">RELOADING...</div>
 
+    </div>
     <!-- Three.js -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-    <script src="game.js?v=5"></script>
+    <script src="game.js?v=6"></script>
 </body>
 </html>
